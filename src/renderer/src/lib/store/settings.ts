@@ -91,6 +91,11 @@ interface Settings {
   dashscopeApiKey: string
 
   hideDockIcon: boolean
+  /** Keep the main window and overlay toolbar hidden while background shortcuts remain active */
+  silentMode: boolean
+  syncEnabled: boolean
+  syncServerUrl: string
+  syncPairingCode: string
 
   audioInputDeviceId: string
   audioOutputDeviceId: string
@@ -128,6 +133,10 @@ const defaultSettings: Settings = {
   dashscopeApiKey: '',
 
   hideDockIcon: false,
+  silentMode: false,
+  syncEnabled: false,
+  syncServerUrl: '',
+  syncPairingCode: '',
 
   audioInputDeviceId: '',
   audioOutputDeviceId: ''

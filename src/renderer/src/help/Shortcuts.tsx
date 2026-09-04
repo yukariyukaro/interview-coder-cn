@@ -55,6 +55,7 @@ const getCategoryName = (category: string) => {
 
 const getShortcutDescription = (action: string) => {
   const descriptionMap: Record<string, string> = {
+    toggleSilentMode: '开启/关闭静默后台运行',
     hideOrShowMainWindow: '隐藏/显示窗口',
     ignoreOrEnableMouse: '鼠标穿透(窗口对鼠标隐身)',
     increaseOpacity: '提高不透明度(窗口更清晰)',
@@ -64,8 +65,8 @@ const getShortcutDescription = (action: string) => {
     stopSolutionStream: '停止生成',
     toggleTranscription: '开始/暂停实时语音转录',
     clearTranscription: '清除转录文本（不提交给AI）',
-    pageUp: '向上翻页',
-    pageDown: '向下翻页',
+    pageUp: '电脑与手机同步向上翻页',
+    pageDown: '电脑与手机同步向下翻页',
     moveMainWindowUp: '向上移动窗口',
     moveMainWindowDown: '向下移动窗口',
     moveMainWindowLeft: '向左移动窗口',

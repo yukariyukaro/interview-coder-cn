@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { BrowserWindow, screen } from 'electron'
 import { is } from '@electron-toolkit/utils'
+import { isSilentModeEnabled } from './silent-mode'
 
 const TOOLBAR_WIDTH = 404
 const TOOLBAR_HEIGHT = 44
@@ -94,6 +95,7 @@ function syncToolbarBounds(): void {
 
 /** Show the toolbar only if the renderer asked for it and the main window is on screen */
 export function showToolbar(): void {
+  if (isSilentModeEnabled()) return
   if (!isToolbarWanted) return
   if (!toolbarWindow || toolbarWindow.isDestroyed()) return
   if (!ownerWindow || ownerWindow.isDestroyed() || !ownerWindow.isVisible()) return

@@ -2,16 +2,8 @@ import { join } from 'node:path'
 import { shell, BrowserWindow } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { createToolbarWindow } from './toolbar-window'
-
-export function applyContentProtection(window: BrowserWindow, forceReset = false): void {
-  if (!window || window.isDestroyed()) return
-
-  if (forceReset && process.platform === 'win32') {
-    window.setContentProtection(false)
-  }
-
-  window.setContentProtection(true)
-}
+import { applyContentProtection } from './silent-mode'
+import { handleWindowReadyToShow } from './window-lifecycle'
 
 export function createWindow(): void {
   // Create the browser window.
@@ -58,20 +50,15 @@ export function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => {
-    mainWindow.show()
-    mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-    mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
-    // Dock visibility is handled at startup (index.ts) and via renderer sync
-    // (settings.ts); the window's own show event must not force it back on.
-    applyContentProtection(mainWindow)
+    handleWindowReadyToShow(mainWindow)
+  })
 
-    // Reclaim top position when other apps steal it
-    mainWindow.on('always-on-top-changed', (_event, isAlwaysOnTop) => {
-      if (!isAlwaysOnTop && mainWindow.isVisible() && !mainWindow.isDestroyed()) {
-        // Only re-set the flag; avoid moveTop() to not disturb other window focus
-        mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
-      }
-    })
+  // Reclaim top position when other apps steal it
+  mainWindow.on('always-on-top-changed', (_event, isAlwaysOnTop) => {
+    if (!isAlwaysOnTop && mainWindow.isVisible() && !mainWindow.isDestroyed()) {
+      // Only re-set the flag; avoid moveTop() to not disturb other window focus
+      mainWindow.setAlwaysOnTop(true, 'screen-saver', 1)
+    }
   })
 
   mainWindow.on('show', () => {

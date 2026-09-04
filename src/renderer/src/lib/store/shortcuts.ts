@@ -36,6 +36,11 @@ function isPersistedShortcutsState(value: unknown): value is PersistedShortcutsS
 }
 
 const defaultShortcuts: Record<string, Omit<Shortcut, 'defaultKey'>> = {
+  toggleSilentMode: {
+    action: 'toggleSilentMode',
+    key: `${platformAlt}+Shift+H`,
+    category: 'Window Management'
+  },
   hideOrShowMainWindow: {
     action: 'hideOrShowMainWindow',
     key: `${platformAlt}+H`,
@@ -138,7 +143,7 @@ export const useShortcutsStore = create<ShortcutsStore>()(
     }),
     {
       name: 'interview-coder-shortcuts',
-      version: 5,
+      version: 6,
       migrate: (state: unknown, version: number) => {
         if (!isPersistedShortcutsState(state) || !state.shortcuts) return state as ShortcutsStore
         // Merge in any new default shortcuts that are missing

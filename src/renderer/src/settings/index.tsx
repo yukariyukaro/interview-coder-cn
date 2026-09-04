@@ -47,6 +47,7 @@ import {
   SelectTrigger,
   SelectValue
 } from '@/components/ui/select'
+import { MobileSyncSettings } from './MobileSyncSettings'
 
 export default function SettingsPage() {
   const {
@@ -66,6 +67,7 @@ export default function SettingsPage() {
     audioInputDeviceId,
     audioOutputDeviceId,
     hideDockIcon,
+    silentMode,
     updateSetting,
     setActiveScene,
     updateScenePrompt,
@@ -77,7 +79,6 @@ export default function SettingsPage() {
   const [addSceneOpen, setAddSceneOpen] = useState(false)
   const [newSceneName, setNewSceneName] = useState('')
   const [sceneToDelete, setSceneToDelete] = useState<string | null>(null)
-
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
 
   const activeScene = scenes.find((s) => s.id === activeSceneId)
@@ -597,6 +598,8 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        <MobileSyncSettings />
+
         {/* Privacy Settings */}
         <div className="bg-gray-300/80 rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center">
@@ -609,6 +612,19 @@ export default function SettingsPage() {
               此应用为本地应用，采集的图片直接上传到您配置的 OpenAI
               等大模型公司，不存在隐私泄露风险。
             </p>
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">
+                静默后台运行
+                <span className="ml-2 text-xs font-light">
+                  开启后立即隐藏主窗口和悬浮工具条，可使用显示/隐藏窗口快捷键恢复
+                </span>
+              </label>
+              <Switch
+                className="scale-y-90"
+                checked={silentMode}
+                onCheckedChange={(checked) => updateSetting('silentMode', checked)}
+              />
+            </div>
             {isMac && (
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium">

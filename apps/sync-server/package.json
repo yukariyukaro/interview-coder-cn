@@ -1,0 +1,22 @@
+{
+  "name": "@interview-coder/sync-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "@interview-coder/sync-protocol": "1.0.0",
+    "ws": "^8.20.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.20.5",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.11"
+  }
+}

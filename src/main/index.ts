@@ -33,6 +33,7 @@ import './window-resize'
 import { createWindow } from './main-window'
 import { initAutoUpdater } from './auto-updater'
 import { applyDockVisibility } from './settings'
+import { handleAppActivate } from './window-lifecycle'
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.
@@ -79,13 +80,7 @@ app.whenReady().then(() => {
   initAutoUpdater()
 
   app.on('activate', function () {
-    // On macOS it's common to re-create a window in the app when the
-    // dock icon is clicked and there are no other windows open.
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow()
-    } else if (global.mainWindow && !global.mainWindow.isVisible()) {
-      global.mainWindow.show()
-    }
+    handleAppActivate(BrowserWindow.getAllWindows().length, global.mainWindow, createWindow)
   })
 })
 

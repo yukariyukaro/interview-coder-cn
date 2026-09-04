@@ -11,6 +11,8 @@
 - **截屏解题**：通过快捷键抓取屏幕内容（可附带电脑声音的实时转录文字），发送给视觉大模型分析，流式展示解答；支持追加截图和追问，保持对话上下文连续
 - **场景化提示词**：预置「解算法题」「英语考试」「能力测评」「通用问答」四个场景，一键切换；也可以添加自定义场景，扩展到任意题型
 - **屏幕分享隐身**：即使被要求分享屏幕，对方也看不到本助手的窗口
+- **静默后台运行**：主窗口和悬浮工具条完全隐藏后，截图和 AI 快捷键仍可继续工作
+- **移动端同步**：通过配对码将解题状态和流式答案同步到 Android/iOS 客户端，不传输截图和 AI Key
 - **不抢占焦点**：窗口置顶半透明展示，不会导致原页面失焦，可规避“跳出网页”检测
 
 ### 适用场景
@@ -20,7 +22,6 @@
 - **能力测评 / 行测**：逻辑推理、归纳（图形）推理、数字推理题，切换到「能力测评」场景，直接给出选项和关键依据
 - **在线考试**：单选、多选、解答等通用题型，切换到「通用问答」场景即可
 - **其他场景**：添加自定义提示词场景，自行扩展
-
 
 ## 如何使用
 
@@ -69,15 +70,67 @@ API_KEY="sk-1234567890" # 代理服务商的 API Key，这里只是示例，需�
 2. 在应用「设置」页面的「语音转录」部分填入 API Key
 3. 使用快捷键（默认 `Alt+T` / `Ctrl+T`）开始/暂停语音转录
 
+### 5. （可选）启动移动端同步
+
+先启动 WebSocket 中继服务：
+
+```bash
+npm run dev:sync
+```
+
+再启动桌面端：
+
+```bash
+npm run dev
+```
+
+桌面端进入「设置 -> 移动端同步」，填写同步服务地址、生成 32 至 64 位桌面密钥并启用同步。手机端点击「扫描电脑端二维码」即可保存连接配置并建立连接；手动输入保留为故障兜底。桌面密钥不要发送到手机或其他设备。
+
+- 电脑端向上/向下翻页快捷键会同步控制同一配对房间内的所有手机，每次按当前可视高度的 85% 平滑滚动
+- 翻页指令仅实时发送，不会保存到答案快照，也不会在手机重连后补执行
+
+- Android 模拟器访问本机中继：`ws://10.0.2.2:8787`
+- iOS 模拟器访问本机中继：`ws://127.0.0.1:8787`
+- Android 真机通过 USB 调试连接时，先执行 `adb reverse tcp:8787 tcp:8787`，再使用 `ws://127.0.0.1:8787`
+- 真机通过局域网或公网连接时，需要使用可访问的 HTTPS/WSS 测试域名；桌面端仅允许远端 `wss://`
+
+首次运行 Android 客户端前，需要安装 Android Studio，并通过 SDK Manager 安装 Android SDK、Platform Tools 和 Emulator。创建并启动 AVD，或连接已开启 USB 调试的真机，然后安装 Development Build：
+
+```bash
+cd apps/mobile
+npx expo run:android --device
+```
+
+扫码功能使用业务 App 内置相机，不依赖 Expo Development Build 首页的「Scan QR Code」。新增或升级 `expo-camera` 后需要重新构建 Development Build，仅刷新 Metro Bundle 不会更新原生模块。
+
+`expo run:android` 会同时启动 Metro。后续调试无需重复原生构建：
+
+```bash
+cd ../..
+npm run android -w @interview-coder/mobile
+npm run ios -w @interview-coder/mobile
+npm run devtools -w @interview-coder/mobile
+```
+
+React Native DevTools 已作为开发依赖安装；Metro 启动后也可以按 `j` 打开内置 DevTools。
+
+### 6. 测试
+
+```bash
+npm test --workspaces --if-present
+npm run typecheck
+npm run typecheck --workspaces --if-present
+npm run lint
+npm run build
+```
+
 ## 关于隐身能力的说明
 
 目前隐身功能适配市面上大部分会议软件(如 腾讯会议 等)，但很少部分软件和浏览器可能无法正常隐身。使用前自己做好测试，本项目不承担任何责任。相关问题欢迎大家提 Issue 讨论。
 
-
 ## 视频教程
 
 具体可到 [Wiki](https://github.com/ooboqoo/interview-coder-cn/wiki) 页面查看。
-
 
 ## 许可协议（License）
 
@@ -86,7 +139,6 @@ API_KEY="sk-1234567890" # 代理服务商的 API Key，这里只是示例，需�
 您可以自由使用、复制、修改本项目代码，但 **禁止任何形式的商业用途**，包括但不限于售卖、集成入商业产品、SaaS 服务等。
 
 如需商业授权，请联系作者获得书面许可。
-
 
 ## 类似项目
 

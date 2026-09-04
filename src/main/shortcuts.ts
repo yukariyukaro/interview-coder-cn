@@ -1,7 +1,13 @@
-import { globalShortcut, ipcMain, screen } from 'electron'
+import { globalShortcut, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import type { ModelMessage } from 'ai'
-import { applyContentProtection } from './main-window'
+import {
+  concealMainWindow,
+  isMainWindowSoftHidden,
+  isSilentModeEnabled,
+  revealMainWindow,
+  transitionSilentMode
+} from './silent-mode'
 import {
   showToolbar,
   hideToolbar,
@@ -14,6 +20,9 @@ import { getSolutionStream, getFollowUpStream, getGeneralStream } from './ai'
 import { state } from './state'
 import { settings } from './settings'
 import { getTranscriptionText, clearTranscriptionText } from './transcription'
+import { isMainWindowSender, isTrustedWindowSender } from './ipc-sender'
+import { solutionEventPublisher } from './solution-events'
+import { sendMobileScrollCommand } from './mobile-sync'
 
 /**
  * Extract meaningful error message from API errors
@@ -79,6 +88,7 @@ interface StreamContext {
 }
 
 let currentStreamContext: StreamContext | null = null
+let requestGeneration = 0
 
 // Conversation history tracking
 let conversationMessages: ModelMessage[] = []
@@ -93,8 +103,6 @@ const FRONT_RELATIVE_LEVEL = 100
 const BACKGROUND_GUARD_INTERVAL = 2000
 let frontReassertTimer: NodeJS.Timeout | null = null
 let backgroundGuardTimer: NodeJS.Timeout | null = null
-let isWindowSoftHidden = false
-let softHiddenPosition: [number, number] | null = null
 
 /**
  * Reassert always-on-top. `aggressive` also calls moveTop() which
@@ -120,7 +128,7 @@ function applyTopMost(win: BrowserWindow, aggressive = true) {
 function startBackgroundGuard(window: BrowserWindow) {
   if (backgroundGuardTimer) return // already running
   backgroundGuardTimer = setInterval(() => {
-    if (!window || window.isDestroyed() || !window.isVisible()) {
+    if (!window || window.isDestroyed() || !window.isVisible() || isMainWindowSoftHidden(window)) {
       stopBackgroundGuard()
       return
     }
@@ -142,56 +150,8 @@ function stopFrontReassert() {
   }
 }
 
-/**
- * Soft-hide parks the window here and puts it back by position alone. Its size
- * is never read and rewritten: on Windows the DIP <-> pixel conversion encloses
- * in both directions, so every such round trip would hand back a slightly
- * larger window (see toolbar-window.ts).
- */
-function getOffscreenPosition(): [number, number] {
-  const displays = screen.getAllDisplays()
-  const maxRight = Math.max(...displays.map((display) => display.bounds.x + display.bounds.width))
-  const topMost = Math.min(...displays.map((display) => display.bounds.y))
-
-  return [maxRight + 2000, topMost]
-}
-
-function softHideWindow(window: BrowserWindow) {
-  if (isWindowSoftHidden || window.isDestroyed()) return
-
-  stopFrontReassert()
-  stopBackgroundGuard()
-  softHiddenPosition = window.getPosition() as [number, number]
-  isWindowSoftHidden = true
-
-  window.setOpacity(0)
-  window.setIgnoreMouseEvents(true)
-  window.setPosition(...getOffscreenPosition())
-  hideToolbar()
-}
-
-function restoreSoftHiddenWindow(window: BrowserWindow) {
-  if (!isWindowSoftHidden || !softHiddenPosition || window.isDestroyed()) return
-
-  applyContentProtection(window, true)
-  window.setPosition(...softHiddenPosition)
-  window.setIgnoreMouseEvents(state.ignoreMouse)
-  window.setOpacity(1)
-
-  isWindowSoftHidden = false
-  softHiddenPosition = null
-  showToolbar()
-  keepWindowInFront(window)
-}
-
 function showMainWindow(window: BrowserWindow) {
-  if (process.platform === 'darwin' || process.platform === 'win32') {
-    window.showInactive()
-  } else {
-    window.show()
-  }
-
-  applyContentProtection(window, process.platform === 'win32')
+  if (!revealMainWindow(window, state.ignoreMouse)) return
   showToolbar()
   keepWindowInFront(window)
 }
@@ -205,7 +165,7 @@ function keepWindowInFront(window: BrowserWindow) {
 
   const start = Date.now()
   const reassert = () => {
-    if (!window.isVisible() || window.isDestroyed()) return false
+    if (!window.isVisible() || window.isDestroyed() || isMainWindowSoftHidden(window)) return false
     applyTopMost(window)
     return true
   }
@@ -237,20 +197,87 @@ function adjustOpacity(delta: number) {
   mainWindow.webContents.send('adjust-opacity', delta)
 }
 
-function abortCurrentStream(reason: AbortReason) {
-  if (!currentStreamContext) return
+function abortCurrentStream(reason: AbortReason): boolean {
+  if (!currentStreamContext) return false
   currentStreamContext.reason = reason
   currentStreamContext.controller.abort()
+  return true
+}
+
+function resetSolutionSession(mainWindow: BrowserWindow): void {
+  solutionEventPublisher.resetSession()
+  mainWindow.webContents.send('solution-clear')
+}
+
+function sendScreenshotUpdate(
+  mainWindow: BrowserWindow,
+  screenshots: string[],
+  total: number
+): void {
+  mainWindow.webContents.send('screenshots-updated', screenshots, total)
+  solutionEventPublisher.publish('screenshot.updated', { total })
+}
+
+function sendRequestStarted(mainWindow: BrowserWindow): void {
+  mainWindow.webContents.send('ai-loading-start')
+  solutionEventPublisher.publish('request.started', {})
+}
+
+function sendSolutionDelta(mainWindow: BrowserWindow, text: string): void {
+  mainWindow.webContents.send('solution-chunk', text)
+  solutionEventPublisher.publish('solution.delta', { text })
+}
+
+function sendRequestCompleted(mainWindow: BrowserWindow): void {
+  mainWindow.webContents.send('solution-complete')
+  solutionEventPublisher.publish('request.completed', {})
+}
+
+function sendRequestStopped(mainWindow: BrowserWindow): void {
+  mainWindow.webContents.send('solution-stopped')
+  solutionEventPublisher.publish('request.stopped', {})
+}
+
+function sendRequestFailed(mainWindow: BrowserWindow, message: string): void {
+  mainWindow.webContents.send('solution-error', message)
+  solutionEventPublisher.publish('request.failed', { message })
+}
+
+function setSilentModeFromShortcut(mainWindow: BrowserWindow, enabled: boolean): void {
+  settings.silentMode = enabled
+  if (enabled) {
+    stopFrontReassert()
+    stopBackgroundGuard()
+  }
+  transitionSilentMode(mainWindow, enabled, {
+    ignoreMouseEvents: state.ignoreMouse,
+    hideCompanionWindow: hideToolbar,
+    showCompanionWindow: showToolbar
+  })
+  mainWindow.webContents.send('silent-mode-changed', enabled)
+  if (!enabled) keepWindowInFront(mainWindow)
 }
 
 const callbacks: Record<string, () => void> = {
+  toggleSilentMode: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed()) return
+
+    setSilentModeFromShortcut(mainWindow, !isSilentModeEnabled())
+  },
+
   hideOrShowMainWindow: async () => {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed()) return
 
+    if (isSilentModeEnabled()) {
+      setSilentModeFromShortcut(mainWindow, false)
+      return
+    }
+
     if (process.platform === 'win32') {
-      if (isWindowSoftHidden) {
-        restoreSoftHiddenWindow(mainWindow)
+      if (isMainWindowSoftHidden(mainWindow)) {
+        showMainWindow(mainWindow)
         return
       }
 
@@ -259,7 +286,10 @@ const callbacks: Record<string, () => void> = {
         return
       }
 
-      softHideWindow(mainWindow)
+      stopFrontReassert()
+      stopBackgroundGuard()
+      concealMainWindow(mainWindow)
+      hideToolbar()
       return
     }
 
@@ -276,9 +306,14 @@ const callbacks: Record<string, () => void> = {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage || !settings.apiKey) return
 
-    abortCurrentStream('new-request')
+    const captureGeneration = ++requestGeneration
+    const replacedActiveRequest = abortCurrentStream('new-request')
     let loadingStarted = false
     const screenshotData = await takeScreenshot()
+    if (captureGeneration !== requestGeneration) return
+    if (!screenshotData && replacedActiveRequest) {
+      solutionEventPublisher.publish('request.stopped', {})
+    }
     if (screenshotData && mainWindow && !mainWindow.isDestroyed()) {
       saveScreenshotToDisk(screenshotData)
       const transcriptionText = getTranscriptionText()
@@ -312,10 +347,10 @@ const callbacks: Record<string, () => void> = {
       recentScreenshots = [screenshotData]
       screenshotCount = 1
       hasAppendSeparator = false
-      mainWindow.webContents.send('solution-clear')
-      mainWindow.webContents.send('screenshots-updated', recentScreenshots, screenshotCount)
+      resetSolutionSession(mainWindow)
+      sendScreenshotUpdate(mainWindow, recentScreenshots, screenshotCount)
       mainWindow.webContents.send('screenshot-taken', screenshotData)
-      mainWindow.webContents.send('ai-loading-start')
+      sendRequestStarted(mainWindow)
       loadingStarted = true
       let endedNaturally = true
       let streamStarted = false
@@ -333,13 +368,13 @@ const callbacks: Record<string, () => void> = {
               break
             }
             assistantResponse += chunk
-            mainWindow.webContents.send('solution-chunk', chunk)
+            sendSolutionDelta(mainWindow, chunk)
           }
         } catch (error) {
           if (!streamContext.controller.signal.aborted) {
             endedNaturally = false
             console.error('Error streaming solution:', error)
-            mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+            sendRequestFailed(mainWindow, extractErrorMessage(error))
           } else {
             endedNaturally = false
           }
@@ -347,7 +382,7 @@ const callbacks: Record<string, () => void> = {
 
         if (streamContext.controller.signal.aborted) {
           if (streamContext.reason === 'user') {
-            mainWindow.webContents.send('solution-stopped')
+            sendRequestStopped(mainWindow)
           }
         } else if (endedNaturally) {
           // Add assistant response to conversation history
@@ -357,26 +392,27 @@ const callbacks: Record<string, () => void> = {
               content: assistantResponse
             })
           }
-          mainWindow.webContents.send('solution-complete')
+          sendRequestCompleted(mainWindow)
         }
       } catch (error) {
         if (streamContext.controller.signal.aborted) {
           if (streamContext.reason === 'user') {
-            mainWindow.webContents.send('solution-stopped')
+            sendRequestStopped(mainWindow)
           }
         } else {
           endedNaturally = false
           console.error('Error streaming solution:', error)
-          mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+          sendRequestFailed(mainWindow, extractErrorMessage(error))
         }
       } finally {
-        if (currentStreamContext === streamContext) {
+        const isCurrentStream = currentStreamContext === streamContext
+        if (isCurrentStream) {
           currentStreamContext = null
         }
         if (!streamStarted && streamContext.reason === 'user') {
-          mainWindow.webContents.send('solution-stopped')
+          sendRequestStopped(mainWindow)
         }
-        if (loadingStarted && mainWindow && !mainWindow.isDestroyed()) {
+        if (isCurrentStream && loadingStarted && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('ai-loading-end')
         }
       }
@@ -394,10 +430,15 @@ const callbacks: Record<string, () => void> = {
       return
     }
 
-    abortCurrentStream('new-request')
+    const captureGeneration = ++requestGeneration
+    const replacedActiveRequest = abortCurrentStream('new-request')
     let loadingStarted = false
 
     const screenshotData = await takeScreenshot()
+    if (captureGeneration !== requestGeneration) return
+    if (!screenshotData && replacedActiveRequest) {
+      solutionEventPublisher.publish('request.stopped', {})
+    }
     if (screenshotData && mainWindow && !mainWindow.isDestroyed()) {
       saveScreenshotToDisk(screenshotData)
       const transcriptionText = getTranscriptionText()
@@ -433,14 +474,14 @@ const callbacks: Record<string, () => void> = {
       recentScreenshots = recentScreenshots.slice(-5) // 限5张
       screenshotCount += 1
       mainWindow.webContents.send('screenshot-taken', screenshotData)
-      mainWindow.webContents.send('screenshots-updated', recentScreenshots, screenshotCount)
+      sendScreenshotUpdate(mainWindow, recentScreenshots, screenshotCount)
+      sendRequestStarted(mainWindow)
       if (!hasAppendSeparator) {
-        mainWindow.webContents.send('solution-chunk', '\n\n---\n\n')
+        sendSolutionDelta(mainWindow, '\n\n---\n\n')
         hasAppendSeparator = true
       } else {
-        mainWindow.webContents.send('solution-chunk', '\n\n')
+        sendSolutionDelta(mainWindow, '\n\n')
       }
-      mainWindow.webContents.send('ai-loading-start')
       loadingStarted = true
 
       let endedNaturally = true
@@ -459,13 +500,13 @@ const callbacks: Record<string, () => void> = {
               break
             }
             assistantResponse += chunk
-            mainWindow.webContents.send('solution-chunk', chunk)
+            sendSolutionDelta(mainWindow, chunk)
           }
         } catch (error) {
           if (!streamContext.controller.signal.aborted) {
             endedNaturally = false
             console.error('Error streaming continuous solution:', error)
-            mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+            sendRequestFailed(mainWindow, extractErrorMessage(error))
           } else {
             endedNaturally = false
           }
@@ -473,7 +514,7 @@ const callbacks: Record<string, () => void> = {
 
         if (streamContext.controller.signal.aborted) {
           if (streamContext.reason === 'user') {
-            mainWindow.webContents.send('solution-stopped')
+            sendRequestStopped(mainWindow)
           }
         } else if (endedNaturally) {
           // Add assistant response to conversation history
@@ -483,26 +524,27 @@ const callbacks: Record<string, () => void> = {
               content: assistantResponse
             })
           }
-          mainWindow.webContents.send('solution-complete')
+          sendRequestCompleted(mainWindow)
         }
       } catch (error) {
         if (streamContext.controller.signal.aborted) {
           if (streamContext.reason === 'user') {
-            mainWindow.webContents.send('solution-stopped')
+            sendRequestStopped(mainWindow)
           }
         } else {
           endedNaturally = false
           console.error('Error streaming continuous solution:', error)
-          mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+          sendRequestFailed(mainWindow, extractErrorMessage(error))
         }
       } finally {
-        if (currentStreamContext === streamContext) {
+        const isCurrentStream = currentStreamContext === streamContext
+        if (isCurrentStream) {
           currentStreamContext = null
         }
         if (!streamStarted && streamContext.reason === 'user') {
-          mainWindow.webContents.send('solution-stopped')
+          sendRequestStopped(mainWindow)
         }
-        if (loadingStarted && mainWindow && !mainWindow.isDestroyed()) {
+        if (isCurrentStream && loadingStarted && mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('ai-loading-end')
         }
       }
@@ -511,6 +553,7 @@ const callbacks: Record<string, () => void> = {
 
   // Stop current AI solution stream
   stopSolutionStream: () => {
+    requestGeneration += 1
     abortCurrentStream('user')
   },
 
@@ -535,12 +578,14 @@ const callbacks: Record<string, () => void> = {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
     mainWindow.webContents.send('scroll-page-up')
+    sendMobileScrollCommand('up')
   },
 
   pageDown: () => {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
     mainWindow.webContents.send('scroll-page-down')
+    sendMobileScrollCommand('down')
   },
 
   moveMainWindowUp: () => {
@@ -659,44 +704,65 @@ function registerShortcut(action: string, key: string) {
   }
 }
 
-ipcMain.handle('getShortcuts', () => shortcuts)
+ipcMain.handle('getShortcuts', (event) => {
+  if (!isMainWindowSender(event.sender)) return false
+  return shortcuts
+})
 
 ipcMain.handle(
   'initShortcuts',
-  (_event, shortcuts: Record<string, { action: string; key: string }>) => {
+  (event, shortcuts: Record<string, { action: string; key: string }>) => {
+    if (!isMainWindowSender(event.sender)) return false
     Object.entries(shortcuts).forEach(([action, { key }]) => {
       registerShortcut(action, key)
     })
+    return true
   }
 )
 
-ipcMain.handle('updateShortcuts', (_event, _shortcuts: { action: string; key: string }[]) => {
+ipcMain.handle('updateShortcuts', (event, _shortcuts: { action: string; key: string }[]) => {
+  if (!isMainWindowSender(event.sender)) return false
   _shortcuts.forEach((shortcut) => {
     if (shortcuts[shortcut.action]?.key !== shortcut.key) {
       registerShortcut(shortcut.action, shortcut.key)
     }
   })
+  return true
 })
 
-ipcMain.handle('stopSolutionStream', () => {
+ipcMain.handle('stopSolutionStream', (event) => {
+  if (!isMainWindowSender(event.sender)) return false
   if (!currentStreamContext) return false
   abortCurrentStream('user')
   return true
 })
 
-ipcMain.handle('triggerAction', (_event, action: string) => {
+ipcMain.handle('triggerAction', (event, action: string) => {
+  if (!isTrustedWindowSender(event.sender)) return false
   if (!clickableActions.has(action)) return false
   callbacks[action]?.()
   return true
 })
 
-ipcMain.handle('setToolbarVisible', (_event, visible: boolean) => {
+ipcMain.handle('setToolbarVisible', (event, visible: boolean) => {
+  if (!isTrustedWindowSender(event.sender) || typeof visible !== 'boolean') return false
   setToolbarWanted(visible)
+  return true
 })
 
-ipcMain.handle('sendFollowUpQuestion', async (_event, question: string) => {
+ipcMain.handle('sendFollowUpQuestion', async (event, question: string) => {
+  if (!isMainWindowSender(event.sender)) {
+    return { success: false, error: 'Unauthorized' }
+  }
   const mainWindow = global.mainWindow
-  if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage || !settings.apiKey) {
+  if (
+    typeof question !== 'string' ||
+    !question.trim() ||
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    !state.inCoderPage ||
+    !settings.apiKey
+  ) {
     return { success: false, error: 'Invalid state' }
   }
 
@@ -705,6 +771,7 @@ ipcMain.handle('sendFollowUpQuestion', async (_event, question: string) => {
     return { success: false, error: 'No active conversation' }
   }
 
+  requestGeneration += 1
   abortCurrentStream('new-request')
   const streamContext: StreamContext = {
     controller: new AbortController(),
@@ -712,8 +779,9 @@ ipcMain.handle('sendFollowUpQuestion', async (_event, question: string) => {
   }
   currentStreamContext = streamContext
 
+  solutionEventPublisher.publish('request.started', {})
   // Add a separator before the follow-up response
-  mainWindow.webContents.send('solution-chunk', '\n\n---\n\n')
+  sendSolutionDelta(mainWindow, '\n\n---\n\n')
 
   let endedNaturally = true
   let streamStarted = false
@@ -734,13 +802,13 @@ ipcMain.handle('sendFollowUpQuestion', async (_event, question: string) => {
           break
         }
         assistantResponse += chunk
-        mainWindow.webContents.send('solution-chunk', chunk)
+        sendSolutionDelta(mainWindow, chunk)
       }
     } catch (error) {
       if (!streamContext.controller.signal.aborted) {
         endedNaturally = false
         console.error('Error streaming follow-up solution:', error)
-        mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+        sendRequestFailed(mainWindow, extractErrorMessage(error))
       } else {
         endedNaturally = false
       }
@@ -748,7 +816,7 @@ ipcMain.handle('sendFollowUpQuestion', async (_event, question: string) => {
 
     if (streamContext.controller.signal.aborted) {
       if (streamContext.reason === 'user') {
-        mainWindow.webContents.send('solution-stopped')
+        sendRequestStopped(mainWindow)
       }
     } else if (endedNaturally) {
       // Update conversation history with user question and assistant response
@@ -767,24 +835,24 @@ ipcMain.handle('sendFollowUpQuestion', async (_event, question: string) => {
           content: assistantResponse
         })
       }
-      mainWindow.webContents.send('solution-complete')
+      sendRequestCompleted(mainWindow)
     }
   } catch (error) {
     if (streamContext.controller.signal.aborted) {
       if (streamContext.reason === 'user') {
-        mainWindow.webContents.send('solution-stopped')
+        sendRequestStopped(mainWindow)
       }
     } else {
       endedNaturally = false
       console.error('Error streaming follow-up solution:', error)
-      mainWindow.webContents.send('solution-error', extractErrorMessage(error))
+      sendRequestFailed(mainWindow, extractErrorMessage(error))
     }
   } finally {
     if (currentStreamContext === streamContext) {
       currentStreamContext = null
     }
     if (!streamStarted && streamContext.reason === 'user') {
-      mainWindow.webContents.send('solution-stopped')
+      sendRequestStopped(mainWindow)
     }
   }
 

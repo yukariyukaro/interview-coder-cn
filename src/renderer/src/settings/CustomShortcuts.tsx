@@ -60,6 +60,11 @@ export function CustomShortcuts() {
         {/* Window Management */}
         <div className="space-y-2">
           <h3 className="text-sm text-gray-500">窗口管理</h3>
+          <Shortcut
+            label="静默后台运行"
+            description="进入或退出持久静默状态；隐藏/显示窗口快捷键也可退出静默"
+            shortcut="toggleSilentMode"
+          />
           <Shortcut label="隐藏/显示窗口" shortcut="hideOrShowMainWindow" />
           <Shortcut
             label="鼠标穿透"
@@ -113,8 +118,8 @@ export function CustomShortcuts() {
         {/* Navigation */}
         <div className="space-y-2">
           <h3 className="text-sm text-gray-500">页面导航</h3>
-          <Shortcut label="向上翻页" shortcut="pageUp" />
-          <Shortcut label="向下翻页" shortcut="pageDown" />
+          <Shortcut label="电脑与手机同步向上翻页" shortcut="pageUp" />
+          <Shortcut label="电脑与手机同步向下翻页" shortcut="pageDown" />
         </div>
 
         {/* Window Movement */}

@@ -8,10 +8,21 @@ const api = {
   // Get the installed app version (package.json version at build time)
   getAppVersion: () => ipcRenderer.invoke('getAppVersion') as Promise<string>,
   // Get app settings
-  getAppSettings: () => ipcRenderer.invoke('getAppSettings'),
+  getAppSettings: () => ipcRenderer.invoke('getAppSettings') as Promise<AppSettings>,
+  // Get the LAN-reachable URL used by the mobile pairing QR code
+  getMobileSyncServerUrl: (serverUrl: string) =>
+    ipcRenderer.invoke('getMobileSyncServerUrl', serverUrl) as Promise<string | null>,
   // Update app settings
   updateAppSettings: (settings: Partial<AppSettings>) =>
     ipcRenderer.invoke('updateAppSettings', settings),
+  onSilentModeChanged: (callback: (enabled: boolean) => void) => {
+    ipcRenderer.on('silent-mode-changed', (_event, enabled) => {
+      if (typeof enabled === 'boolean') callback(enabled)
+    })
+  },
+  removeSilentModeChangedListener: () => {
+    ipcRenderer.removeAllListeners('silent-mode-changed')
+  },
 
   // Resize transparent frameless windows without toggling Electron's native resizable style
   startWindowResize: (direction: 'n' | 'ne' | 'e' | 'se' | 's' | 'sw' | 'w' | 'nw') =>

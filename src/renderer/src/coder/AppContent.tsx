@@ -6,7 +6,7 @@ import { useSolutionStore } from '@/lib/store/solution'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
 import ShortcutRenderer from '@/components/ShortcutRenderer'
 
-const SCROLL_OFFSET = 120
+const PAGE_SCROLL_VIEWPORT_RATIO = 0.85
 
 export function AppContent() {
   const {
@@ -95,7 +95,7 @@ export function AppContent() {
       const container = document.getElementById('app-content')
       if (!container) return
       container.scrollTo({
-        top: container.scrollTop - window.innerHeight + SCROLL_OFFSET,
+        top: container.scrollTop - container.clientHeight * PAGE_SCROLL_VIEWPORT_RATIO,
         behavior: 'smooth'
       })
     })
@@ -109,7 +109,7 @@ export function AppContent() {
       const container = document.getElementById('app-content')
       if (!container) return
       container.scrollTo({
-        top: container.scrollTop + window.innerHeight - SCROLL_OFFSET,
+        top: container.scrollTop + container.clientHeight * PAGE_SCROLL_VIEWPORT_RATIO,
         behavior: 'smooth'
       })
     })

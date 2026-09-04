@@ -1,0 +1,26 @@
+{
+  "expo": {
+    "name": "截屏解题助手",
+    "slug": "interview-coder-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "scheme": "interviewcoder",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.interviewcoder.mobile"
+    },
+    "android": {
+      "package": "com.interviewcoder.mobile"
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "允许截屏解题助手使用相机扫描电脑端配对二维码"
+        }
+      ]
+    ]
+  }
+}
