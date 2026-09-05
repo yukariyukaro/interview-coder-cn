@@ -3,7 +3,7 @@ import type { ModelMessage } from 'ai'
 
 import { getFollowUpStream, getGeneralStream, getSolutionStream } from './ai'
 import { saveScreenshotToDisk } from './save-screenshot'
-import { settings } from '../core/settings'
+import { getEffectiveAISettings, settings } from '../core/settings'
 import { solutionEventPublisher } from './solution-events'
 import { createSolutionDeltaBuffer } from './solution-delta-buffer'
 import { state } from '../core/state'
@@ -176,7 +176,13 @@ async function runStream({
 
 function getReadyMainWindow(): BrowserWindow | null {
   const mainWindow = global.mainWindow
-  if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage || !settings.apiKey) return null
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    !state.inCoderPage ||
+    !getEffectiveAISettings(settings).apiKey
+  )
+    return null
   return mainWindow
 }
 

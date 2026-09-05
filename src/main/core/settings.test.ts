@@ -30,7 +30,7 @@ vi.mock('./ipc-sender', () => ({ isMainWindowSender: mocks.isMainWindowSender })
 vi.mock('./state', () => ({ state: { ignoreMouse: false } }))
 vi.mock('../sync/mobile-sync', () => ({ configureMobileSync: mocks.configureMobileSync }))
 
-import { sanitizeAppSettingsUpdate, settings } from './settings'
+import { getEffectiveAISettings, sanitizeAppSettingsUpdate, settings } from './settings'
 
 describe('settings IPC', () => {
   beforeEach(() => {
@@ -59,6 +59,8 @@ describe('settings IPC', () => {
         id: 'aptitude-test',
         name: '能力测评',
         prompt: '直接回答选择题',
+        apiBaseURL: 'https://scene.example.com/v1',
+        apiKey: 'scene-key',
         model: 'gpt-5-mini',
         reasoningEffort: 'low',
         shortcut: 'Alt+P',
@@ -75,6 +77,35 @@ describe('settings IPC', () => {
         scenes: [{ ...scenes[0], reasoningEffort: 'unsupported' }]
       })
     ).toEqual({})
+  })
+
+  it('inherits each missing scene AI field from the global setting', () => {
+    const effective = getEffectiveAISettings({
+      ...settings,
+      apiBaseURL: 'https://global.example.com/v1',
+      apiKey: 'global-key',
+      model: 'global-model',
+      activeSceneId: 'scene',
+      scenes: [
+        {
+          id: 'scene',
+          name: '场景',
+          prompt: '',
+          apiBaseURL: 'https://scene.example.com/v1',
+          apiKey: '',
+          model: 'scene-model',
+          reasoningEffort: 'default',
+          shortcut: '',
+          isPreset: false
+        }
+      ]
+    })
+
+    expect(effective).toEqual({
+      apiBaseURL: 'https://scene.example.com/v1',
+      apiKey: 'global-key',
+      model: 'scene-model'
+    })
   })
 
   it('accepts only supported color modes', () => {

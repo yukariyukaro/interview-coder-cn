@@ -19,6 +19,8 @@ export interface PromptScene {
   id: string
   name: string
   prompt: string
+  apiBaseURL: string
+  apiKey: string
   model: string
   reasoningEffort: ReasoningEffort
   shortcut: string
@@ -40,6 +42,8 @@ const createPresetScenes = (): PromptScene[] => [
     id: CODING_SCENE_ID,
     name: '解算法题',
     prompt: PRESET_SCENE_PROMPTS[CODING_SCENE_ID],
+    apiBaseURL: '',
+    apiKey: '',
     model: '',
     reasoningEffort: 'default',
     shortcut: `${platformAlt}+Enter`,
@@ -49,6 +53,8 @@ const createPresetScenes = (): PromptScene[] => [
     id: 'english-exam',
     name: '英语考试',
     prompt: PRESET_SCENE_PROMPTS['english-exam'],
+    apiBaseURL: '',
+    apiKey: '',
     model: '',
     reasoningEffort: 'low',
     shortcut: `${platformAlt}+E`,
@@ -58,6 +64,8 @@ const createPresetScenes = (): PromptScene[] => [
     id: 'aptitude-test',
     name: '能力测评',
     prompt: PRESET_SCENE_PROMPTS['aptitude-test'],
+    apiBaseURL: '',
+    apiKey: '',
     model: '',
     reasoningEffort: 'low',
     shortcut: `${platformAlt}+P`,
@@ -67,6 +75,8 @@ const createPresetScenes = (): PromptScene[] => [
     id: 'general-qa',
     name: '通用问答',
     prompt: PRESET_SCENE_PROMPTS['general-qa'],
+    apiBaseURL: '',
+    apiKey: '',
     model: '',
     reasoningEffort: 'default',
     shortcut: `${platformAlt}+G`,
@@ -135,7 +145,12 @@ interface SettingsStore extends Settings {
   setActiveScene: (id: string) => void
   updateScene: (
     id: string,
-    update: Partial<Pick<PromptScene, 'model' | 'prompt' | 'reasoningEffort' | 'shortcut'>>
+    update: Partial<
+      Pick<
+        PromptScene,
+        'apiBaseURL' | 'apiKey' | 'model' | 'prompt' | 'reasoningEffort' | 'shortcut'
+      >
+    >
   ) => void
   updateScenePrompt: (id: string, prompt: string) => void
   addScene: (name: string) => string
@@ -224,6 +239,8 @@ export const useSettingsStore = create<SettingsStore>()(
               id,
               name,
               prompt: '',
+              apiBaseURL: '',
+              apiKey: '',
               model: '',
               reasoningEffort: 'default' as const,
               shortcut: '',
@@ -254,7 +271,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'interview-coder-settings',
-      version: 9,
+      version: 10,
       migrate: (persisted, version) => {
         const state = persisted as Partial<Settings>
         // Drop the legacy codeLanguage field (language now lives in the prompt text)
@@ -277,6 +294,8 @@ export const useSettingsStore = create<SettingsStore>()(
               id,
               name: '自定义场景',
               prompt: legacyPrompt,
+              apiBaseURL: '',
+              apiKey: '',
               model: '',
               reasoningEffort: 'default',
               shortcut: '',
@@ -301,13 +320,17 @@ export const useSettingsStore = create<SettingsStore>()(
               ...p,
               ...saved,
               // Restore the default prompt if a preset scene was left empty
-              prompt: saved.prompt.trim() ? saved.prompt : p.prompt
+              prompt: saved.prompt.trim() ? saved.prompt : p.prompt,
+              apiBaseURL: typeof saved.apiBaseURL === 'string' ? saved.apiBaseURL : '',
+              apiKey: typeof saved.apiKey === 'string' ? saved.apiKey : ''
             }
           }),
           ...persistedScenes
             .filter((s) => !s.isPreset)
             .map((scene) => ({
               ...scene,
+              apiBaseURL: typeof scene.apiBaseURL === 'string' ? scene.apiBaseURL : '',
+              apiKey: typeof scene.apiKey === 'string' ? scene.apiKey : '',
               model: typeof scene.model === 'string' ? scene.model : '',
               reasoningEffort: isReasoningEffort(scene.reasoningEffort)
                 ? scene.reasoningEffort

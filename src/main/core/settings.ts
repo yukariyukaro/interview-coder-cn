@@ -20,6 +20,8 @@ export type SceneSettings = {
   id: string
   name: string
   prompt: string
+  apiBaseURL: string
+  apiKey: string
   model: string
   reasoningEffort: ReasoningEffort
   shortcut: string
@@ -131,6 +133,19 @@ export const settings = {
 
 export type AppSettings = typeof settings
 
+export function getEffectiveAISettings(appSettings: AppSettings): {
+  apiBaseURL: string
+  apiKey: string
+  model: string
+} {
+  const scene = appSettings.scenes.find((candidate) => candidate.id === appSettings.activeSceneId)
+  return {
+    apiBaseURL: scene?.apiBaseURL || appSettings.apiBaseURL,
+    apiKey: scene?.apiKey || appSettings.apiKey,
+    model: scene?.model || appSettings.model
+  }
+}
+
 const reasoningEfforts = new Set<ReasoningEffort>(['default', 'minimal', 'low', 'medium', 'high'])
 
 function isSceneSettingsArray(value: unknown): value is SceneSettings[] {
@@ -148,6 +163,10 @@ function isSceneSettingsArray(value: unknown): value is SceneSettings[] {
         scene.name.length <= 100 &&
         typeof scene.prompt === 'string' &&
         scene.prompt.length <= 100_000 &&
+        typeof scene.apiBaseURL === 'string' &&
+        scene.apiBaseURL.length <= 2_048 &&
+        typeof scene.apiKey === 'string' &&
+        scene.apiKey.length <= 512 &&
         typeof scene.model === 'string' &&
         scene.model.length <= 256 &&
         typeof scene.shortcut === 'string' &&

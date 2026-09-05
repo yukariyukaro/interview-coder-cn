@@ -1,6 +1,6 @@
 import { smoothStream, streamText, type ModelMessage } from 'ai'
 import { createOpenAI } from '@ai-sdk/openai'
-import { settings, type AppSettings } from '../core/settings'
+import { getEffectiveAISettings, settings } from '../core/settings'
 
 const SMALL_STREAM_CHUNK_SIZE = 8
 const LARGE_STREAM_CHUNK_SIZE = 24
@@ -14,12 +14,11 @@ function getSystemPrompt(extra?: string) {
   return [scenePrompt ?? settings.customPrompt, extra].filter(Boolean).join('\n\n') || undefined
 }
 
-function getModel(_settings: AppSettings) {
-  const sceneModel = settings.scenes.find((scene) => scene.id === settings.activeSceneId)?.model
-  const fallbackModel = settings.apiBaseURL.includes('siliconflow')
+function getModel(aiSettings: ReturnType<typeof getEffectiveAISettings>) {
+  const fallbackModel = aiSettings.apiBaseURL.includes('siliconflow')
     ? 'Qwen/Qwen3-VL-32B-Instruct'
     : 'gpt-5-mini'
-  return sceneModel || _settings.model || fallbackModel
+  return aiSettings.model || fallbackModel
 }
 
 function isOpenAIReasoningModel(model: string): boolean {
@@ -50,8 +49,13 @@ export function getSmoothStreamChunk(buffer: string): string | null {
   return characters.slice(0, chunkSize).join('')
 }
 
-function getStreamOptions(openai: ReturnType<typeof createOpenAI>) {
-  const model = getModel(settings)
+function getStreamOptions() {
+  const aiSettings = getEffectiveAISettings(settings)
+  const openai = createOpenAI({
+    baseURL: aiSettings.apiBaseURL,
+    apiKey: aiSettings.apiKey
+  })
+  const model = getModel(aiSettings)
   const providerOptions = getProviderOptions(model)
   return {
     model: openai.chat(model),
@@ -64,13 +68,8 @@ function getStreamOptions(openai: ReturnType<typeof createOpenAI>) {
 }
 
 export function getSolutionStream(messages: ModelMessage[], abortSignal?: AbortSignal) {
-  const openai = createOpenAI({
-    baseURL: settings.apiBaseURL,
-    apiKey: settings.apiKey
-  })
-
   const { textStream } = streamText({
-    ...getStreamOptions(openai),
+    ...getStreamOptions(),
     system: getSystemPrompt(),
     messages,
     abortSignal,
@@ -86,11 +85,6 @@ export function getFollowUpStream(
   userQuestion: string,
   abortSignal?: AbortSignal
 ) {
-  const openai = createOpenAI({
-    baseURL: settings.apiBaseURL,
-    apiKey: settings.apiKey
-  })
-
   // Add the user's follow-up question to the conversation
   const updatedMessages: ModelMessage[] = [
     ...messages,
@@ -106,7 +100,7 @@ export function getFollowUpStream(
   ]
 
   const { textStream } = streamText({
-    ...getStreamOptions(openai),
+    ...getStreamOptions(),
     system: getSystemPrompt(),
     messages: updatedMessages,
     abortSignal,
@@ -118,13 +112,8 @@ export function getFollowUpStream(
 }
 
 export function getGeneralStream(messages: ModelMessage[], abortSignal?: AbortSignal) {
-  const openai = createOpenAI({
-    baseURL: settings.apiBaseURL,
-    apiKey: settings.apiKey
-  })
-
   const { textStream } = streamText({
-    ...getStreamOptions(openai),
+    ...getStreamOptions(),
     system: getSystemPrompt(
       '注意：如果有多张截图，请结合所有截图内容进行完整分析，不要遗漏任何部分。'
     ),

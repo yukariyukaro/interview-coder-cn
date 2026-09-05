@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Plus, RotateCcw, SquareTerminal, X } from 'lucide-react'
+import { Eye, EyeOff, Plus, RotateCcw, SquareTerminal, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import {
@@ -38,6 +38,7 @@ export function SceneSettingsSection() {
   const [addSceneOpen, setAddSceneOpen] = useState(false)
   const [newSceneName, setNewSceneName] = useState('')
   const [sceneToDelete, setSceneToDelete] = useState<string | null>(null)
+  const [showSceneApiKey, setShowSceneApiKey] = useState(false)
   const activeScene = scenes.find((scene) => scene.id === activeSceneId)
   const deletingScene = scenes.find((scene) => scene.id === sceneToDelete)
 
@@ -111,6 +112,47 @@ export function SceneSettingsSection() {
 
           {activeScene && (
             <div className="space-y-4">
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-sm font-medium">
+                  场景 API Base URL
+                  <span className="ml-2 text-xs font-light">留空时使用 AI 设置中的默认地址</span>
+                </label>
+                <Input
+                  value={activeScene.apiBaseURL}
+                  onChange={(event) =>
+                    updateScene(activeScene.id, { apiBaseURL: event.target.value })
+                  }
+                  className="w-60 bg-white"
+                  placeholder="继承默认 Base URL"
+                />
+              </div>
+
+              <div className="flex items-center justify-between gap-4">
+                <label className="text-sm font-medium">
+                  场景 API Key
+                  <span className="ml-2 text-xs font-light">留空时使用 AI 设置中的默认 Key</span>
+                </label>
+                <div className="flex items-center w-60">
+                  <Input
+                    type={showSceneApiKey ? 'text' : 'password'}
+                    value={activeScene.apiKey}
+                    onChange={(event) =>
+                      updateScene(activeScene.id, { apiKey: event.target.value })
+                    }
+                    className="flex-1 rounded-r-none bg-white"
+                    placeholder="继承默认 API Key"
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setShowSceneApiKey(!showSceneApiKey)}
+                    className="border border-l-0 rounded-l-none rounded-r-md h-9 w-9 hover:border-none"
+                  >
+                    {showSceneApiKey ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
+                  </Button>
+                </div>
+              </div>
+
               <div className="flex items-center justify-between gap-4">
                 <label className="text-sm font-medium">
                   场景模型

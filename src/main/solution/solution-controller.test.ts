@@ -9,6 +9,11 @@ const mocks = vi.hoisted(() => ({
   resetSession: vi.fn(),
   publish: vi.fn(),
   settings: { apiKey: 'key' },
+  getEffectiveAISettings: vi.fn((settings: { apiKey: string }) => ({
+    apiBaseURL: '',
+    apiKey: settings.apiKey,
+    model: ''
+  })),
   state: { inCoderPage: true }
 }))
 
@@ -19,7 +24,10 @@ vi.mock('./ai', () => ({
 }))
 vi.mock('./take-screenshot', () => ({ takeScreenshot: mocks.takeScreenshot }))
 vi.mock('./save-screenshot', () => ({ saveScreenshotToDisk: mocks.saveScreenshotToDisk }))
-vi.mock('../core/settings', () => ({ settings: mocks.settings }))
+vi.mock('../core/settings', () => ({
+  settings: mocks.settings,
+  getEffectiveAISettings: mocks.getEffectiveAISettings
+}))
 vi.mock('../core/state', () => ({ state: mocks.state }))
 vi.mock('../input/transcription', () => ({
   getTranscriptionText: mocks.getTranscriptionText,
