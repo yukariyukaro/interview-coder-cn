@@ -2,6 +2,7 @@ import { randomUUID } from 'node:crypto'
 
 import type { SyncEvent } from '@interview-coder/sync-protocol'
 import {
+  DEFAULT_SCROLL_DISTANCE_RATIO,
   SYNC_PROTOCOL_VERSION,
   parseSyncControlMessage,
   parseSyncEvent,
@@ -10,7 +11,7 @@ import {
 } from '@interview-coder/sync-protocol'
 import WebSocket from 'ws'
 
-import { solutionEventPublisher } from './solution-events'
+import { solutionEventPublisher } from '../solution/solution-events'
 
 const PAIRING_CODE_PATTERN = /^[A-Za-z0-9_-]{32,64}$/
 const SOCKET_CONNECTING = 0
@@ -57,7 +58,7 @@ export type MobileSyncClientOptions = {
 export type MobileSyncClient = {
   configure(config: MobileSyncConfig): void
   send(event: SyncEvent): boolean
-  sendScrollCommand(direction: ScrollDirection): boolean
+  sendScrollCommand(direction: ScrollDirection, distanceRatio?: number): boolean
   close(): void
 }
 
@@ -160,14 +161,17 @@ export function createMobileSyncClient(options: MobileSyncClientOptions): Mobile
     }
   }
 
-  function sendScrollCommand(direction: ScrollDirection): boolean {
+  function sendScrollCommand(
+    direction: ScrollDirection,
+    distanceRatio = DEFAULT_SCROLL_DISTANCE_RATIO
+  ): boolean {
     if (!authenticated || !socket || socket.readyState !== SOCKET_OPEN) return false
     const parsed = parseSyncControlMessage({
       version: SYNC_PROTOCOL_VERSION,
       type: 'control.scroll',
       commandId: createCommandId(),
       timestamp: now(),
-      payload: { direction }
+      payload: { direction, distanceRatio }
     })
     if (!parsed.success) return false
     try {
@@ -268,6 +272,9 @@ export function configureMobileSync(config: MobileSyncConfig): void {
   mobileSyncClient.configure(config)
 }
 
-export function sendMobileScrollCommand(direction: ScrollDirection): boolean {
-  return mobileSyncClient.sendScrollCommand(direction)
+export function sendMobileScrollCommand(
+  direction: ScrollDirection,
+  distanceRatio = DEFAULT_SCROLL_DISTANCE_RATIO
+): boolean {
+  return mobileSyncClient.sendScrollCommand(direction, distanceRatio)
 }

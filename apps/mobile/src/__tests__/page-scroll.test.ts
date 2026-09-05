@@ -1,7 +1,9 @@
+import { CONTINUOUS_SCROLL_DISTANCE_RATIO } from '@interview-coder/sync-protocol'
+
 import { getNextPageOffset } from '../sync/page-scroll'
 
 describe('getNextPageOffset', () => {
-  it('moves down by 85% of the current viewport', () => {
+  it('moves down by 75% of the current viewport', () => {
     expect(
       getNextPageOffset({
         direction: 'down',
@@ -9,10 +11,10 @@ describe('getNextPageOffset', () => {
         viewportHeight: 600,
         contentHeight: 2_000
       })
-    ).toBe(710)
+    ).toBe(650)
   })
 
-  it('moves up by 85% of the current viewport', () => {
+  it('moves up by 75% of the current viewport', () => {
     expect(
       getNextPageOffset({
         direction: 'up',
@@ -20,7 +22,7 @@ describe('getNextPageOffset', () => {
         viewportHeight: 600,
         contentHeight: 2_000
       })
-    ).toBe(390)
+    ).toBe(450)
   })
 
   it('scales the page distance with the viewport height', () => {
@@ -37,8 +39,20 @@ describe('getNextPageOffset', () => {
       contentHeight: 3_000
     })
 
-    expect(phoneTarget).toBe(510)
-    expect(tabletTarget).toBe(850)
+    expect(phoneTarget).toBe(450)
+    expect(tabletTarget).toBe(750)
+  })
+
+  it('uses an explicit continuous-scroll ratio', () => {
+    expect(
+      getNextPageOffset({
+        direction: 'down',
+        currentOffset: 0,
+        viewportHeight: 600,
+        contentHeight: 3_000,
+        distanceRatio: CONTINUOUS_SCROLL_DISTANCE_RATIO
+      })
+    ).toBe(60)
   })
 
   it('clamps the target at both content boundaries', () => {

@@ -126,14 +126,15 @@ describe('useSyncConnection', () => {
           type: 'control.scroll',
           commandId: 'command-1',
           timestamp: 1_725_000_000_000,
-          payload: { direction: 'down' }
+          payload: { direction: 'down', distanceRatio: 0.75 }
         })
       )
     )
 
     expect(result.current.scrollCommand).toEqual({
       commandId: 'command-1',
-      direction: 'down'
+      direction: 'down',
+      distanceRatio: 0.75
     })
     expect(result.current.sessionState).toBe(initialSession)
 
@@ -145,7 +146,7 @@ describe('useSyncConnection', () => {
           type: 'control.scroll',
           commandId: 'command-1',
           timestamp: 1_725_000_000_001,
-          payload: { direction: 'up' }
+          payload: { direction: 'up', distanceRatio: 0.1 }
         })
       )
     )
@@ -158,13 +159,14 @@ describe('useSyncConnection', () => {
           type: 'control.scroll',
           commandId: 'command-2',
           timestamp: 1_725_000_000_002,
-          payload: { direction: 'up' }
+          payload: { direction: 'up', distanceRatio: 0.1 }
         })
       )
     )
     expect(result.current.scrollCommand).toEqual({
       commandId: 'command-2',
-      direction: 'up'
+      direction: 'up',
+      distanceRatio: 0.1
     })
   })
 

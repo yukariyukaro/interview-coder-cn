@@ -32,17 +32,13 @@ Key capabilities:
 src/
 ├── main/                    # Electron main process
 │   ├── index.ts             # App entry: lifecycle, error handling, app.whenReady()
-│   ├── main-window.ts       # BrowserWindow creation (frameless, transparent, always-on-top)
-│   ├── toolbar-window.ts    # Overlay toolbar window: bounds/visibility/opacity glued to main window
-│   ├── shortcuts.ts         # Global shortcuts registration + AI streaming orchestration (largest file)
-│   ├── ai.ts                # Vercel AI SDK integration, 3 streaming functions
-│   ├── settings.ts          # App settings object + IPC handlers
-│   ├── state.ts             # App state object + IPC handlers
-│   ├── take-screenshot.ts   # desktopCapturer → base64 PNG
-│   ├── transcription.ts     # DashScope WebSocket real-time speech-to-text
-│   ├── window-resize.ts     # Cursor-tracking resize for the frameless windows
-│   ├── auto-updater.ts      # electron-updater (non-macOS only)
-│   └── index.d.ts           # global.mainWindow type declaration
+│   ├── index.d.ts           # global.mainWindow type declaration
+│   ├── core/                # Shared settings, runtime state, IPC sender validation
+│   ├── input/               # Global shortcuts, scroll input, speech transcription
+│   ├── solution/            # AI client, screenshot pipeline, solution session/events
+│   ├── sync/                # Desktop mobile-sync client and network URL resolution
+│   ├── updater/             # electron-updater integration
+│   └── windows/             # Main/toolbar windows, lifecycle, resize, silent mode
 ├── preload/
 │   ├── index.ts             # contextBridge API: exposes window.api to renderer
 │   └── index.d.ts           # Type declarations for window.electron and window.api
@@ -100,19 +96,20 @@ src/
 ┌─────────────────────────────────────────────────────┐
 │  Main Process (src/main/)                           │
 │  ┌──────────┐  ┌──────────┐  ┌───────────────────┐ │
-│  │ settings │  │  state   │  │    shortcuts.ts    │ │
-│  │   .ts    │  │   .ts    │  │  (orchestrator)   │ │
-│  └────┬─────┘  └────┬─────┘  │  - global hotkeys │ │
-│       │              │        │  - AI streaming   │ │
-│       │              │        │  - conversation   │ │
-│       │              │        │    management     │ │
-│       │              │        └──┬───────────┬────┘ │
-│       │              │           │           │      │
-│       │              │     ┌─────┴──┐  ┌─────┴────┐ │
-│       │              │     │ ai.ts  │  │take-     │ │
-│       │              │     │        │  │screenshot│ │
-│       │              │     └────────┘  └──────────┘ │
-│       └──────────────┼───────────┘                  │
+│  │   core   │  │ windows  │  │       input       │ │
+│  │ settings │  │ lifecycle│  │ shortcuts / ASR   │ │
+│  │   state  │  │ resize   │  └─────────┬─────────┘ │
+│  └────┬─────┘  └────┬─────┘            │           │
+│       │              │          ┌───────┴─────────┐ │
+│       │              │          │    solution     │ │
+│       │              │          │ capture / AI    │ │
+│       │              │          │ session / events│ │
+│       │              │          └───────┬─────────┘ │
+│       │              │                  │           │
+│       │              │          ┌───────┴─────────┐ │
+│       │              │          │      sync       │ │
+│       │              │          │ mobile WebSocket│ │
+│       └──────────────┼──────────┴─────────────────┘ │
 │              IPC (ipcMain.handle)                    │
 ├─────────────────────────────────────────────────────┤
 │  Preload (src/preload/)                             │
@@ -128,12 +125,13 @@ src/
 ### Data Flow: Screenshot → Solution
 
 1. User presses global shortcut (e.g., `Alt+Enter` on macOS)
-2. `shortcuts.ts` callback triggers `takeScreenshot()` → `desktopCapturer` → base64 PNG
-3. Main sends `screenshot-taken` and `ai-loading-start` to renderer
-4. Main calls `getSolutionStream(base64Image)` → Vercel AI SDK `streamText()`
-5. Stream chunks sent to renderer via `solution-chunk` IPC events
-6. Renderer accumulates chunks in `useSolutionStore` and renders via `MarkdownRenderer`
-7. On completion: `solution-complete`; on error: `solution-error`; on abort: `solution-stopped`
+2. `input/shortcuts.ts` delegates to `solution/solution-controller.ts`
+3. `solution/take-screenshot.ts` uses `desktopCapturer` to create a base64 PNG
+4. Main sends `screenshot-taken` and `ai-loading-start` to renderer
+5. `solution/ai.ts` calls Vercel AI SDK `streamText()`
+6. Stream chunks are sent to renderer via `solution-chunk` IPC events
+7. Renderer accumulates chunks in `useSolutionStore` and renders via `MarkdownRenderer`
+8. On completion: `solution-complete`; on error: `solution-error`; on abort: `solution-stopped`
 
 ### IPC Channels
 
@@ -162,8 +160,8 @@ src/
 
 | Store | File | Persisted | Key State |
 |-------|------|-----------|-----------|
-| `useSettingsStore` | `lib/store/settings.ts` | Yes (v8) | `apiBaseURL`, `apiKey`, `model`, `customModels`, `scenes` (prompt scenes), `activeSceneId`, `customPrompt` (derived from active scene), `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `screenshotDisplay`, `dashscopeApiKey` |
-| `useShortcutsStore` | `lib/store/shortcuts.ts` | Yes (v5) | `shortcuts` (action → key mapping with categories) |
+| `useSettingsStore` | `lib/store/settings.ts` | Yes (v9) | `apiBaseURL`, `apiKey`, `model`, `customModels`, `scenes` (prompt scenes), `activeSceneId`, `customPrompt` (derived from active scene), `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `screenshotDisplay`, `dashscopeApiKey` |
+| `useShortcutsStore` | `lib/store/shortcuts.ts` | Yes (v7) | `shortcuts` (action → key mapping with categories) |
 | `useSolutionStore` | `lib/store/solution.ts` | No | `isLoading`, `solutionChunks`, `screenshotData`, `errorMessage` |
 | `useTranscriptionStore` | `lib/store/transcription.ts` | No | `isTranscribing`, `transcriptionText`, `errorMessage` |
 | `useAppStore` | `lib/store/app.ts` | No | `ignoreMouse` |
@@ -185,7 +183,7 @@ The app is designed to be invisible to screen-sharing software:
 
 ### Overlay Toolbar
 
-A second `BrowserWindow` (`src/main/toolbar-window.ts`) that renders the `/toolbar` route, so the shortcut actions can be driven with the mouse instead of the keyboard:
+A second `BrowserWindow` (`src/main/windows/toolbar-window.ts`) that renders the `/toolbar` route, so the shortcut actions can be driven with the mouse instead of the keyboard:
 - Owns its own visibility state: the renderer calls `setToolbarVisible()` (main page + `showOverlayToolbar` setting), main additionally requires the main window to be visible. Never call `showInactive()` on it directly — go through `showToolbar()` / `hideToolbar()`.
 - `focusable: false` so clicking a button never pulls focus away from the app underneath
 - Opacity is applied at the window level to match the main window, which applies its own via `document.body.style.opacity`
@@ -198,19 +196,19 @@ A second `BrowserWindow` (`src/main/toolbar-window.ts`) that renders the `/toolb
 
 Both windows are created with `resizable: false` — toggling Electron's native resizable style breaks transparency on Windows — so resizing is implemented by hand:
 - `WindowResizeHandles` renders eight fixed-position edge/corner divs — or, with `axis="x"`, just the two side edges — and sends only `window-resize-start` (pointerdown) and `window-resize-stop`
-- `src/main/window-resize.ts` then polls `screen.getCursorScreenPoint()` and calls `setBounds()`. The cursor is sampled in main because the toolbar is a non-activating panel on macOS and never receives a drag's pointer moves
+- `src/main/windows/window-resize.ts` then polls `screen.getCursorScreenPoint()` and calls `setBounds()`. The cursor is sampled in main because the toolbar is a non-activating panel on macOS and never receives a drag's pointer moves
 - The drag is ended by a `window`-level `pointerup`/`pointercancel`/`blur` listener, with a 30s safety timeout in main as the last resort
 - The handles sit at `z-index: 2147483647`; anything flush against a window edge (e.g. `#app-header .actions`) must raise itself above them or it becomes unclickable
 - The main window's handles are gated by the `resizable` setting; the toolbar's are always on but width-only (`axis="x"` — its height is the button row), with the resize cursor suppressed in `main.css`
 
 ### AI Integration
 
-- All AI calls go through `src/main/ai.ts` using Vercel AI SDK's `streamText()`
+- All AI calls go through `src/main/solution/ai.ts` using Vercel AI SDK's `streamText()`
 - Provider: `@ai-sdk/openai` with custom `baseURL` (works with any OpenAI-compatible API)
 - Model fallback: `Qwen/Qwen3-VL-32B-Instruct` for SiliconFlow, `gpt-5-mini` otherwise
 - System prompts are maintained in the renderer settings store (`PRESET_SCENE_PROMPTS` in `lib/store/settings.ts`) as "prompt scenes"; the active scene's prompt is synced to the main process as `customPrompt`
 - Three streaming functions: `getSolutionStream` (first screenshot), `getFollowUpStream` (follow-up), `getGeneralStream` (multi-screenshot)
-- Conversation history (`conversationMessages`) is maintained in `shortcuts.ts` as `ModelMessage[]`
+- Conversation history (`conversationMessages`) is maintained in `solution/solution-controller.ts` as `ModelMessage[]`
 
 ### Stream Abort Pattern
 
@@ -221,7 +219,7 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 
 ### Real-time Speech Transcription
 
-- Uses DashScope (Alibaba Cloud) Fun-ASR real-time ASR via WebSocket (`src/main/transcription.ts`)
+- Uses DashScope (Alibaba Cloud) Fun-ASR real-time ASR via WebSocket (`src/main/input/transcription.ts`)
 - Requires a separate `dashscopeApiKey` configured in settings
 - Audio is captured in the renderer via `getDisplayMedia()` (system audio), downsampled to 16kHz PCM, and streamed to main process via IPC
 - `TranscriptionBar` is absolute-positioned at the top of the coder page, shows up to 3 lines with auto-scroll
@@ -234,7 +232,7 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 - Global shortcuts registered via Electron's `globalShortcut` API
 - Renderer stores shortcut config in Zustand (persisted); sends to main on init
 - On Windows, `Alt`-based shortcuts also register `Ctrl+Alt` variant for compatibility
-- Shortcut actions are string-keyed callbacks in `shortcuts.ts`
+- Shortcut actions are string-keyed callbacks in `src/main/input/shortcuts.ts`
 - Default shortcuts use `platformAlt` (`Alt` on macOS, `CommandOrControl` on Windows)
 
 ### UI Component Patterns
@@ -293,9 +291,9 @@ These are read by dotenv in the main process and merged with renderer-side setti
 
 4. **Settings flow**: `.env` → main process `settings` object → renderer reads on mount via IPC → renderer persists to localStorage via Zustand. Renderer-side changes are sent back to main via `updateAppSettings`.
 
-5. **No shared types directory**: Main process types (`AppSettings`, `AppState`) are imported directly by the preload script from `../main/settings` and `../main/state`. This works because preload shares the Node.js tsconfig.
+5. **No shared types directory**: Main process types (`AppSettings`, `AppState`) are imported directly by the preload script from `../main/core/settings` and `../main/core/state`. This works because preload shares the Node.js tsconfig.
 
-6. **Streaming orchestration is in `shortcuts.ts`**: Despite the filename, this 580+ line file is the central orchestrator for both global shortcuts AND AI streaming logic. It manages conversation history, abort controllers, and IPC communication for the entire AI workflow.
+6. **Streaming orchestration is in `solution/solution-controller.ts`**: It manages conversation history, abort controllers, screenshot requests, and solution lifecycle events. `input/shortcuts.ts` only maps global shortcuts and IPC actions onto those operations.
 
 7. **Window movement**: The window can be moved via keyboard shortcuts in 200px steps (up/down/left/right), and resized by dragging its edges (see Window Resizing).
 

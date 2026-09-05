@@ -170,21 +170,21 @@ describe('createMobileSyncClient', () => {
     sockets[0].emit('message', JSON.stringify({ type: 'authenticated' }))
 
     expect(client.sendScrollCommand('down')).toBe(true)
-    expect(client.sendScrollCommand('down')).toBe(true)
+    expect(client.sendScrollCommand('down', 0.1)).toBe(true)
     expect(sockets[0].sent.map((message) => JSON.parse(message)).slice(-2)).toEqual([
       {
         version: 1,
         type: 'control.scroll',
         commandId: 'command-1',
         timestamp: 1_725_000_000_000,
-        payload: { direction: 'down' }
+        payload: { direction: 'down', distanceRatio: 0.75 }
       },
       {
         version: 1,
         type: 'control.scroll',
         commandId: 'command-2',
         timestamp: 1_725_000_000_000,
-        payload: { direction: 'down' }
+        payload: { direction: 'down', distanceRatio: 0.1 }
       }
     ])
 

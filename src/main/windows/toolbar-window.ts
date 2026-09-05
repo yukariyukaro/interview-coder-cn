@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import { BrowserWindow, screen } from 'electron'
 import { is } from '@electron-toolkit/utils'
 import { isSilentModeEnabled } from './silent-mode'
+import type { ColorMode } from '../core/settings'
 
 const TOOLBAR_WIDTH = 404
 const TOOLBAR_HEIGHT = 44
@@ -146,9 +147,9 @@ export function setToolbarOpacity(opacity: number): void {
  * The toolbar lives in its own renderer, so it never sees the settings store
  * updates made in the main window; push the ones it needs over IPC instead.
  */
-export function syncToolbarSettings(hoverDelay: number): void {
+export function syncToolbarSettings(hoverDelay: number, colorMode: ColorMode): void {
   if (!toolbarWindow || toolbarWindow.isDestroyed()) return
-  toolbarWindow.webContents.send('sync-toolbar-settings', { hoverDelay })
+  toolbarWindow.webContents.send('sync-toolbar-settings', { hoverDelay, colorMode })
 }
 
 /** Reclaim the top spot alongside the main window, without ever revealing a hidden toolbar */

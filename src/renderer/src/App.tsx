@@ -10,13 +10,25 @@ import { useShortcutsStore } from '@/lib/store/shortcuts'
 import { getCloneableFields } from '@/lib/utils'
 import { WindowResizeHandles } from '@/components/WindowResizeHandles'
 import { shouldBootstrapMainRenderer } from '@/renderer-bootstrap'
+import { getSceneShortcuts } from '@/lib/scene-shortcuts'
 
 export default function App() {
   const [initialized, setInitialized] = useState(false)
   const settingsStore = useSettingsStore()
   const updateSetting = useSettingsStore((state) => state.updateSetting)
+  const setActiveScene = useSettingsStore((state) => state.setActiveScene)
+  const scenes = useSettingsStore((state) => state.scenes)
+  const colorMode = useSettingsStore((state) => state.colorMode)
   const { shortcuts } = useShortcutsStore()
   const isMainRenderer = shouldBootstrapMainRenderer(window.location.hash)
+  const sceneShortcutSignature = scenes
+    .map((scene) => `${scene.id}\u0000${scene.shortcut}`)
+    .join('\u0001')
+
+  useEffect(() => {
+    if (!isMainRenderer) return
+    document.documentElement.dataset.theme = colorMode
+  }, [colorMode, isMainRenderer])
 
   useEffect(() => {
     if (!isMainRenderer) return
@@ -56,13 +68,19 @@ export default function App() {
 
   useEffect(() => {
     if (!isMainRenderer) return
-    console.log('App initShortcuts:', shortcuts) // DEBUG: 检查新键
-    window.api.initShortcuts(shortcuts)
-    window.api.getShortcuts().then((shortcutsStatus) => {
-      console.log('Shortcuts registered:', shortcutsStatus) // DEBUG: 主进程状态
+    window.api.onActiveSceneChanged((sceneId) => {
+      setActiveScene(sceneId)
     })
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMainRenderer])
+    return () => {
+      window.api.removeActiveSceneChangedListener()
+    }
+  }, [isMainRenderer, setActiveScene])
+
+  useEffect(() => {
+    if (!isMainRenderer || !initialized) return
+    const sceneShortcuts = getSceneShortcuts(useSettingsStore.getState().scenes)
+    void window.api.initShortcuts({ ...shortcuts, ...sceneShortcuts })
+  }, [initialized, isMainRenderer, sceneShortcutSignature, shortcuts])
 
   return (
     <>

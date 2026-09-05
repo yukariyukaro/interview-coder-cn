@@ -1,4 +1,5 @@
 import { CircleAlert, LoaderCircle, Wifi, WifiOff } from 'lucide-react-native'
+import { DEFAULT_SCROLL_DISTANCE_RATIO } from '@interview-coder/sync-protocol'
 import { useEffect, useRef, useState } from 'react'
 import {
   KeyboardAvoidingView,
@@ -55,6 +56,8 @@ function Workspace() {
   const currentOffsetRef = useRef(0)
   const targetOffsetRef = useRef(0)
   const remoteScrollInProgressRef = useRef(false)
+  const isStreamingRef = useRef(sessionState.requestStatus === 'loading')
+  isStreamingRef.current = sessionState.requestStatus === 'loading'
 
   useEffect(() => {
     let active = true
@@ -84,11 +87,18 @@ function Workspace() {
         ? targetOffsetRef.current
         : currentOffsetRef.current,
       viewportHeight: viewportHeightRef.current,
-      contentHeight: contentHeightRef.current
+      contentHeight: contentHeightRef.current,
+      distanceRatio: scrollCommand.distanceRatio
     })
     targetOffsetRef.current = target
     remoteScrollInProgressRef.current = true
-    scrollViewRef.current.scrollTo({ y: target, animated: true })
+    scrollViewRef.current.scrollTo({
+      y: target,
+      animated:
+        !isStreamingRef.current &&
+        (scrollCommand.distanceRatio === undefined ||
+          scrollCommand.distanceRatio >= DEFAULT_SCROLL_DISTANCE_RATIO)
+    })
   }, [scrollCommand])
 
   const updateSettings = async (nextSettings: ConnectionSettings) => {

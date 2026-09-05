@@ -1,15 +1,17 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { ScrollDirection } from '@interview-coder/sync-protocol'
 import { Images } from 'lucide-react'
 import { useSettingsStore, type ScreenshotDisplay } from '@/lib/store/settings'
-import { useShortcutsStore } from '@/lib/store/shortcuts'
 import { useSolutionStore } from '@/lib/store/solution'
+import { getNextScrollTop, getScrollBehavior } from '@/lib/scroll'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
 import ShortcutRenderer from '@/components/ShortcutRenderer'
 
-const PAGE_SCROLL_VIEWPORT_RATIO = 0.85
+const CONTINUOUS_SCROLL_TARGET_HOLD_MS = 350
 
 export function AppContent() {
   const {
+    isLoading,
     screenshotData,
     solutionChunks,
     errorMessage,
@@ -23,8 +25,12 @@ export function AppContent() {
   const screenshotDisplay = useSettingsStore((state) => state.screenshotDisplay)
 
   const [recentScreenshots, setRecentScreenshots] = useState<string[]>([])
+  const isStreamingRef = useRef(isLoading)
+  const scrollTargetRef = useRef<number | null>(null)
+  const scrollTargetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   // Main keeps only the last 5 thumbnails, but every screenshot went to the AI
   const [screenshotTotal, setScreenshotTotal] = useState(0)
+  isStreamingRef.current = isLoading
 
   useEffect(() => {
     // Listen for screenshot events (latest)
@@ -91,30 +97,68 @@ export function AppContent() {
   }, [setIsLoading, setErrorMessage])
 
   useEffect(() => {
-    window.api.onScrollPageUp(() => {
-      const container = document.getElementById('app-content')
-      if (!container) return
-      container.scrollTo({
-        top: container.scrollTop - container.clientHeight * PAGE_SCROLL_VIEWPORT_RATIO,
-        behavior: 'smooth'
+    const container = document.getElementById('app-content')
+    if (!container) return
+
+    const clearProgrammaticTarget = () => {
+      scrollTargetRef.current = null
+      if (scrollTargetTimerRef.current !== null) {
+        clearTimeout(scrollTargetTimerRef.current)
+        scrollTargetTimerRef.current = null
+      }
+    }
+
+    const scheduleProgrammaticTargetReset = () => {
+      if (scrollTargetTimerRef.current !== null) {
+        clearTimeout(scrollTargetTimerRef.current)
+      }
+      scrollTargetTimerRef.current = setTimeout(() => {
+        scrollTargetRef.current = null
+        scrollTargetTimerRef.current = null
+      }, CONTINUOUS_SCROLL_TARGET_HOLD_MS)
+    }
+
+    const scrollPage = (direction: ScrollDirection, distanceRatio?: number) => {
+      const currentOffset = scrollTargetRef.current ?? container.scrollTop
+      const target = getNextScrollTop({
+        direction,
+        currentOffset,
+        viewportHeight: container.clientHeight,
+        contentHeight: container.scrollHeight,
+        distanceRatio
       })
+      scrollTargetRef.current = target
+      container.scrollTo({
+        top: target,
+        behavior: getScrollBehavior({
+          isStreaming: isStreamingRef.current,
+          distanceRatio
+        })
+      })
+      scheduleProgrammaticTargetReset()
+    }
+
+    const resetOnManualScroll = () => {
+      clearProgrammaticTarget()
+    }
+
+    window.api.onScrollPageUp((distanceRatio) => {
+      scrollPage('up', distanceRatio)
     })
+    window.api.onScrollPageDown((distanceRatio) => {
+      scrollPage('down', distanceRatio)
+    })
+    container.addEventListener('wheel', resetOnManualScroll, { passive: true })
+    container.addEventListener('pointerdown', resetOnManualScroll)
+    container.addEventListener('touchstart', resetOnManualScroll, { passive: true })
+
     return () => {
       window.api.removeScrollPageUpListener()
-    }
-  }, [])
-
-  useEffect(() => {
-    window.api.onScrollPageDown(() => {
-      const container = document.getElementById('app-content')
-      if (!container) return
-      container.scrollTo({
-        top: container.scrollTop + container.clientHeight * PAGE_SCROLL_VIEWPORT_RATIO,
-        behavior: 'smooth'
-      })
-    })
-    return () => {
       window.api.removeScrollPageDownListener()
+      container.removeEventListener('wheel', resetOnManualScroll)
+      container.removeEventListener('pointerdown', resetOnManualScroll)
+      container.removeEventListener('touchstart', resetOnManualScroll)
+      clearProgrammaticTarget()
     }
   }, [])
 
@@ -194,7 +238,7 @@ function Screenshots({
   if (display === 'count') {
     // The content area sits on bg-gray-500, so the card reads light-on-dark like the prose
     return (
-      <div className="mb-4 inline-flex items-center gap-1.5 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-sm text-gray-100 select-none">
+      <div className="screenshot-count mb-4 inline-flex items-center gap-1.5 rounded-lg border border-white/30 bg-white/10 px-2.5 py-1 text-sm text-gray-100 select-none">
         <Images className="h-4 w-4" />
         {total} 张截图
       </div>
@@ -217,14 +261,20 @@ function Screenshots({
 }
 
 function ShortcutTip() {
-  const { shortcuts } = useShortcutsStore()
+  const activeSceneShortcut = useSettingsStore(
+    (state) => state.scenes.find((scene) => scene.id === state.activeSceneId)?.shortcut
+  )
+  if (!activeSceneShortcut) {
+    return (
+      <div className="flex items-center justify-center h-full text-xl text-gray-400 select-none">
+        请在设置中配置场景截图快捷键
+      </div>
+    )
+  }
   return (
     <div className="flex items-center justify-center h-full text-xl text-gray-400 select-none">
       请按下快捷键
-      <ShortcutRenderer
-        shortcut={shortcuts.takeScreenshot.key}
-        className="mx-1 font-bold text-black"
-      />
+      <ShortcutRenderer shortcut={activeSceneShortcut} className="mx-1 font-bold text-black" />
       抓取屏幕进行分析
     </div>
   )

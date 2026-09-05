@@ -39,7 +39,7 @@ export default function HelpPage() {
       </div>
 
       {/* Help Content */}
-      <div id="app-content" className="flex flex-col gap-4 p-8">
+      <div id="app-content" className="help-page flex flex-col gap-4 p-8">
         {/* Introduction */}
         <HelpSection Icon={Info} title="简介" description={appVersion && `当前版本 v${appVersion}`}>
           <p className="text-gray-700">

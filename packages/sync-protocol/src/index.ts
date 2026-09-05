@@ -3,6 +3,8 @@ import { z } from 'zod'
 export const SYNC_PROTOCOL_VERSION = 1 as const
 export const MIN_PAIRING_CODE_LENGTH = 32
 export const MOBILE_PAIRING_CODE_DERIVATION_CONTEXT = 'interview-coder-mobile-v1:'
+export const DEFAULT_SCROLL_DISTANCE_RATIO = 0.75
+export const CONTINUOUS_SCROLL_DISTANCE_RATIO = 0.1
 
 export const syncAuthMessageSchema = z.strictObject({
   type: z.literal('authenticate'),
@@ -84,7 +86,8 @@ export const syncControlMessageSchema = z.strictObject({
   commandId: z.string().min(1).max(128),
   timestamp: z.number().int().nonnegative(),
   payload: z.strictObject({
-    direction: z.enum(['up', 'down'])
+    direction: z.enum(['up', 'down']),
+    distanceRatio: z.number().gt(0).lte(1).optional()
   })
 })
 

@@ -1,12 +1,30 @@
 import { app, dialog, ipcMain } from 'electron'
-import { hideToolbar, setToolbarOpacity, showToolbar, syncToolbarSettings } from './toolbar-window'
-import { transitionSilentMode } from './silent-mode'
+import {
+  hideToolbar,
+  setToolbarOpacity,
+  showToolbar,
+  syncToolbarSettings
+} from '../windows/toolbar-window'
+import { transitionSilentMode } from '../windows/silent-mode'
 import { isMainWindowSender, isTrustedWindowSender } from './ipc-sender'
 import { state } from './state'
-import { configureMobileSync } from './mobile-sync'
-import { getMobileSyncServerUrl } from './sync-network'
+import { configureMobileSync } from '../sync/mobile-sync'
+import { getMobileSyncServerUrl } from '../sync/sync-network'
 
 let silentModeSettingReceived = false
+
+export type ReasoningEffort = 'default' | 'minimal' | 'low' | 'medium' | 'high'
+export type ColorMode = 'light' | 'dark'
+
+export type SceneSettings = {
+  id: string
+  name: string
+  prompt: string
+  model: string
+  reasoningEffort: ReasoningEffort
+  shortcut: string
+  isPreset: boolean
+}
 
 ipcMain.handle('getAppVersion', (event) => {
   if (!isMainWindowSender(event.sender)) return null
@@ -48,8 +66,8 @@ ipcMain.handle('updateAppSettings', (event, input: unknown) => {
   if ('opacity' in update) {
     setToolbarOpacity(settings.opacity)
   }
-  if ('toolbarHoverDelay' in update) {
-    syncToolbarSettings(settings.toolbarHoverDelay)
+  if ('toolbarHoverDelay' in update || 'colorMode' in update) {
+    syncToolbarSettings(settings.toolbarHoverDelay, settings.colorMode)
   }
   if ('syncEnabled' in update || 'syncServerUrl' in update || 'syncPairingCode' in update) {
     configureMobileSync({
@@ -88,6 +106,8 @@ export const settings = {
   apiKey: process.env.API_KEY || '',
   model: process.env.MODEL || '',
   customPrompt: '',
+  activeSceneId: 'coding',
+  scenes: [] as SceneSettings[],
   /** Kept in sync with the renderer so the overlay toolbar can match the main window */
   opacity: 0.8,
   /**
@@ -96,6 +116,7 @@ export const settings = {
    * renderer fields from here, so a truthy default would overwrite a user's "off".
    */
   toolbarHoverDelay: 0,
+  colorMode: 'dark' as ColorMode,
   screenshotAutoSave: false,
   screenshotDir: '',
   dashscopeApiKey: '',
@@ -110,14 +131,44 @@ export const settings = {
 
 export type AppSettings = typeof settings
 
+const reasoningEfforts = new Set<ReasoningEffort>(['default', 'minimal', 'low', 'medium', 'high'])
+
+function isSceneSettingsArray(value: unknown): value is SceneSettings[] {
+  return (
+    Array.isArray(value) &&
+    value.length <= 50 &&
+    value.every(
+      (scene) =>
+        typeof scene === 'object' &&
+        scene !== null &&
+        typeof scene.id === 'string' &&
+        scene.id.length > 0 &&
+        scene.id.length <= 128 &&
+        typeof scene.name === 'string' &&
+        scene.name.length <= 100 &&
+        typeof scene.prompt === 'string' &&
+        scene.prompt.length <= 100_000 &&
+        typeof scene.model === 'string' &&
+        scene.model.length <= 256 &&
+        typeof scene.shortcut === 'string' &&
+        scene.shortcut.length <= 128 &&
+        typeof scene.isPreset === 'boolean' &&
+        reasoningEfforts.has(scene.reasoningEffort as ReasoningEffort)
+    )
+  )
+}
+
 const settingValidators: Record<keyof AppSettings, (value: unknown) => boolean> = {
   apiBaseURL: (value) => typeof value === 'string',
   apiKey: (value) => typeof value === 'string',
   model: (value) => typeof value === 'string',
   customPrompt: (value) => typeof value === 'string',
+  activeSceneId: (value) => typeof value === 'string',
+  scenes: isSceneSettingsArray,
   opacity: (value) =>
     typeof value === 'number' && Number.isFinite(value) && value >= 0.1 && value <= 1,
   toolbarHoverDelay: (value) => typeof value === 'number' && [0, 500, 1000, 2000].includes(value),
+  colorMode: (value) => value === 'light' || value === 'dark',
   screenshotAutoSave: (value) => typeof value === 'boolean',
   screenshotDir: (value) => typeof value === 'string',
   dashscopeApiKey: (value) => typeof value === 'string',

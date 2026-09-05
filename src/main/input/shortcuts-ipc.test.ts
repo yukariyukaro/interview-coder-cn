@@ -9,8 +9,41 @@ const mocks = vi.hoisted(() => ({
   transitionSilentMode: vi.fn(),
   setToolbarWanted: vi.fn(),
   sendMobileScrollCommand: vi.fn(),
+  scrollInputController: {
+    next: vi.fn(() => 0.75),
+    reset: vi.fn()
+  },
+  takeNewScreenshot: vi.fn(),
+  appendScreenshot: vi.fn(),
+  stopSolutionStream: vi.fn(() => true),
+  sendFollowUpQuestion: vi.fn(),
   state: { inCoderPage: true, ignoreMouse: false },
-  settings: { apiKey: 'key', silentMode: false }
+  settings: {
+    apiKey: 'key',
+    silentMode: false,
+    activeSceneId: 'coding',
+    customPrompt: 'coding prompt',
+    scenes: [
+      {
+        id: 'coding',
+        name: '解算法题',
+        prompt: 'coding prompt',
+        model: '',
+        reasoningEffort: 'default',
+        shortcut: 'Alt+Enter',
+        isPreset: true
+      },
+      {
+        id: 'aptitude-test',
+        name: '能力测评',
+        prompt: 'choice prompt',
+        model: 'gpt-5-mini',
+        reasoningEffort: 'low',
+        shortcut: 'Alt+P',
+        isPreset: true
+      }
+    ]
+  }
 }))
 
 vi.mock('electron', () => ({
@@ -27,46 +60,41 @@ vi.mock('electron', () => ({
     })
   }
 }))
-vi.mock('./silent-mode', () => ({
+vi.mock('../windows/silent-mode', () => ({
   concealMainWindow: vi.fn(),
   isMainWindowSoftHidden: vi.fn(() => false),
   isSilentModeEnabled: mocks.isSilentModeEnabled,
   revealMainWindow: vi.fn(() => true),
   transitionSilentMode: mocks.transitionSilentMode
 }))
-vi.mock('./toolbar-window', () => ({
+vi.mock('../windows/toolbar-window', () => ({
   showToolbar: vi.fn(),
   hideToolbar: vi.fn(),
   setToolbarWanted: mocks.setToolbarWanted,
   reassertToolbarTopMost: vi.fn()
 }))
-vi.mock('./take-screenshot', () => ({ takeScreenshot: vi.fn() }))
-vi.mock('./save-screenshot', () => ({ saveScreenshotToDisk: vi.fn() }))
-vi.mock('./ai', () => ({
-  getSolutionStream: vi.fn(),
-  getFollowUpStream: vi.fn(),
-  getGeneralStream: vi.fn()
-}))
-vi.mock('./state', () => ({ state: mocks.state }))
-vi.mock('./settings', () => ({ settings: mocks.settings }))
-vi.mock('./mobile-sync', () => ({
+vi.mock('../core/state', () => ({ state: mocks.state }))
+vi.mock('../core/settings', () => ({ settings: mocks.settings }))
+vi.mock('../sync/mobile-sync', () => ({
   sendMobileScrollCommand: mocks.sendMobileScrollCommand
+}))
+vi.mock('./scroll-input', () => ({
+  createScrollInputController: vi.fn(() => mocks.scrollInputController)
+}))
+vi.mock('../solution/solution-controller', () => ({
+  takeNewScreenshot: mocks.takeNewScreenshot,
+  appendScreenshot: mocks.appendScreenshot,
+  stopSolutionStream: mocks.stopSolutionStream,
+  sendFollowUpQuestion: mocks.sendFollowUpQuestion
 }))
 vi.mock('./transcription', () => ({
   getTranscriptionText: vi.fn(() => ''),
   clearTranscriptionText: vi.fn()
 }))
-vi.mock('./ipc-sender', () => ({
+vi.mock('../core/ipc-sender', () => ({
   isMainWindowSender: mocks.isMainWindowSender,
   isTrustedWindowSender: mocks.isTrustedWindowSender
 }))
-vi.mock('./solution-events', () => ({
-  solutionEventPublisher: {
-    resetSession: vi.fn(),
-    publish: vi.fn()
-  }
-}))
-
 await import('./shortcuts')
 
 function createMainWindowMock() {
@@ -90,8 +118,15 @@ describe('shortcuts IPC sender protection', () => {
     mocks.transitionSilentMode.mockClear()
     mocks.setToolbarWanted.mockClear()
     mocks.sendMobileScrollCommand.mockClear()
+    mocks.scrollInputController.next.mockReset().mockReturnValue(0.75)
+    mocks.takeNewScreenshot.mockClear()
+    mocks.appendScreenshot.mockClear()
+    mocks.stopSolutionStream.mockClear().mockReturnValue(true)
+    mocks.sendFollowUpQuestion.mockClear()
     mocks.state.inCoderPage = true
     mocks.settings.silentMode = false
+    mocks.settings.activeSceneId = 'coding'
+    mocks.settings.customPrompt = 'coding prompt'
     global.mainWindow = undefined
   })
 
@@ -142,8 +177,24 @@ describe('shortcuts IPC sender protection', () => {
 
     expect(triggerAction!({ sender: {} }, action)).toBe(true)
 
-    expect(mainWindow.webContents.send).toHaveBeenCalledWith(channel)
-    expect(mocks.sendMobileScrollCommand).toHaveBeenCalledWith(direction)
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith(channel, 0.75)
+    expect(mocks.sendMobileScrollCommand).toHaveBeenCalledWith(direction, 0.75)
+  })
+
+  it('passes continuous distance for repeated page-down shortcuts', () => {
+    const triggerAction = mocks.handlers.get('triggerAction')
+    const mainWindow = createMainWindowMock()
+    global.mainWindow = mainWindow as never
+    mocks.isTrustedWindowSender.mockReturnValue(true)
+    mocks.scrollInputController.next.mockReturnValueOnce(0.75).mockReturnValueOnce(0.1)
+
+    expect(triggerAction!({ sender: {} }, 'pageDown')).toBe(true)
+    expect(triggerAction!({ sender: {} }, 'pageDown')).toBe(true)
+
+    expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(1, 'scroll-page-down', 0.75)
+    expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(2, 'scroll-page-down', 0.1)
+    expect(mocks.sendMobileScrollCommand).toHaveBeenNthCalledWith(1, 'down', 0.75)
+    expect(mocks.sendMobileScrollCommand).toHaveBeenNthCalledWith(2, 'down', 0.1)
   })
 
   it('does not scroll either target outside the coder page', () => {
@@ -157,6 +208,32 @@ describe('shortcuts IPC sender protection', () => {
 
     expect(mainWindow.webContents.send).not.toHaveBeenCalledWith('scroll-page-down')
     expect(mocks.sendMobileScrollCommand).not.toHaveBeenCalled()
+  })
+
+  it('selects a synchronized scene before invoking its capture shortcut', () => {
+    const initShortcuts = mocks.handlers.get('initShortcuts')
+    const mainWindow = createMainWindowMock()
+    global.mainWindow = mainWindow as never
+    mocks.isMainWindowSender.mockReturnValue(true)
+
+    initShortcuts!(
+      { sender: {} },
+      {
+        'captureScene:aptitude-test': {
+          action: 'captureScene:aptitude-test',
+          key: 'Alt+P'
+        }
+      }
+    )
+    mocks.registeredCallbacks.get('Alt+P')!()
+
+    expect(mocks.settings.activeSceneId).toBe('aptitude-test')
+    expect(mocks.settings.customPrompt).toBe('choice prompt')
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith(
+      'active-scene-changed',
+      'aptitude-test'
+    )
+    expect(mocks.takeNewScreenshot).toHaveBeenCalledOnce()
   })
 
   it('toggles silent mode from its dedicated global shortcut', () => {

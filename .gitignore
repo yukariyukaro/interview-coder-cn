@@ -4,6 +4,7 @@ dist
 .DS_Store
 .eslintcache
 .expo/
+midscene_run/
 apps/mobile/android/
 apps/mobile/ios/
 *.log*

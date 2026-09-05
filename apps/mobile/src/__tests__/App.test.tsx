@@ -4,7 +4,7 @@ import { ScrollView } from 'react-native'
 
 import App from '../../App'
 import { loadConnectionSettings, saveConnectionSettings } from '../storage/connection-settings'
-import { initialSessionState } from '../sync/session-reducer'
+import { initialSessionState, type SessionState } from '../sync/session-reducer'
 import { useSyncConnection } from '../sync/use-sync-connection'
 
 jest.mock('../storage/connection-settings', () => ({
@@ -173,9 +173,14 @@ describe('App', () => {
       sessionState: {
         ...initialSessionState,
         solution: '足够长的答案',
-        sessionId: 'session-1'
-      },
-      scrollCommand: null as { commandId: string; direction: 'up' | 'down' } | null,
+        sessionId: 'session-1',
+        requestStatus: 'loading'
+      } as SessionState,
+      scrollCommand: null as {
+        commandId: string
+        direction: 'up' | 'down'
+        distanceRatio?: number
+      } | null,
       reconnect: jest.fn()
     }
     mockUseSyncConnection.mockImplementation(() => connectionResult)
@@ -194,7 +199,28 @@ describe('App', () => {
     }
     await rendered.rerender(<App />)
 
-    expect(scrollTo).toHaveBeenCalledWith({ y: 510, animated: true })
+    expect(scrollTo).toHaveBeenCalledWith({ y: 450, animated: false })
+
+    connectionResult.scrollCommand = {
+      commandId: 'command-2',
+      direction: 'down',
+      distanceRatio: 0.1
+    }
+    await rendered.rerender(<App />)
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 510, animated: false })
+
+    connectionResult.sessionState = {
+      ...connectionResult.sessionState,
+      requestStatus: 'completed'
+    }
+    connectionResult.scrollCommand = {
+      commandId: 'command-3',
+      direction: 'up'
+    }
+    await rendered.rerender(<App />)
+
+    expect(scrollTo).toHaveBeenLastCalledWith({ y: 60, animated: true })
     scrollTo.mockRestore()
   })
 })

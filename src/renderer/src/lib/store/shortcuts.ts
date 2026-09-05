@@ -61,11 +61,6 @@ const defaultShortcuts: Record<string, Omit<Shortcut, 'defaultKey'>> = {
     key: `${platformAlt}+Shift+Down`,
     category: 'Window Management'
   },
-  takeScreenshot: {
-    action: 'takeScreenshot',
-    key: `${platformAlt}+Enter`,
-    category: 'Screenshot & AI'
-  },
   appendScreenshot: {
     action: 'appendScreenshot',
     key: `${platformAlt}+Shift+Enter`,
@@ -143,7 +138,7 @@ export const useShortcutsStore = create<ShortcutsStore>()(
     }),
     {
       name: 'interview-coder-shortcuts',
-      version: 6,
+      version: 7,
       migrate: (state: unknown, version: number) => {
         if (!isPersistedShortcutsState(state) || !state.shortcuts) return state as ShortcutsStore
         // Merge in any new default shortcuts that are missing
@@ -160,6 +155,7 @@ export const useShortcutsStore = create<ShortcutsStore>()(
             ...state.shortcuts
           }
         } as ShortcutsStore
+        delete merged.shortcuts.takeScreenshot
 
         // v2→v3: On Windows, migrate Alt shortcuts to CommandOrControl (Ctrl)
         if (version < 3 && !isMac) {

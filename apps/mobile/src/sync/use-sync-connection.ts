@@ -24,6 +24,7 @@ export type ConnectionState =
 export type ScrollCommand = {
   commandId: string
   direction: ScrollDirection
+  distanceRatio?: number
 }
 
 type UseSyncConnectionResult = {
@@ -181,9 +182,11 @@ export function useSyncConnection(settings: ConnectionSettings | null): UseSyncC
         if (parsedControl.success) {
           if (lastCommandIdRef.current !== parsedControl.data.commandId) {
             lastCommandIdRef.current = parsedControl.data.commandId
+            const { direction, distanceRatio } = parsedControl.data.payload
             setScrollCommand({
               commandId: parsedControl.data.commandId,
-              direction: parsedControl.data.payload.direction
+              direction,
+              ...(distanceRatio === undefined ? {} : { distanceRatio })
             })
           }
           return

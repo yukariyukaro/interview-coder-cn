@@ -3,6 +3,7 @@ import { Pointer, PointerOff, OctagonX, MessageCircle } from 'lucide-react'
 import { useSolutionStore } from '@/lib/store/solution'
 import { useShortcutsStore } from '@/lib/store/shortcuts'
 import { useAppStore } from '@/lib/store/app'
+import { useSettingsStore } from '@/lib/store/settings'
 import ShortcutRenderer from '@/components/ShortcutRenderer'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogTitle, DialogContent, DialogFooter } from '@/components/ui/dialog'
@@ -17,6 +18,9 @@ export function AppStatusBar() {
   } = useSolutionStore()
   const { ignoreMouse } = useAppStore()
   const { shortcuts } = useShortcutsStore()
+  const activeScene = useSettingsStore((state) =>
+    state.scenes.find((scene) => scene.id === state.activeSceneId)
+  )
   const [isDialogOpen, setIsDialogOpen] = useState(false)
   const [questionInput, setQuestionInput] = useState('')
 
@@ -54,7 +58,7 @@ export function AppStatusBar() {
   const hasActiveConversation = screenshotData && solutionChunks.length > 0
 
   return (
-    <div className="absolute bottom-0 flex items-center justify-between w-full text-blue-100 bg-gray-600/10 px-4 pb-1">
+    <div className="app-status-bar absolute bottom-0 flex items-center justify-between w-full text-blue-100 bg-gray-600/10 px-4 pb-1">
       <div>
         {isReceivingSolution ? (
           <div className="flex items-center space-x-2">
@@ -84,13 +88,15 @@ export function AppStatusBar() {
               />
               追加截图
             </span>
-            <span>
-              <ShortcutRenderer
-                shortcut={shortcuts.takeScreenshot.key}
-                className="inline-block scale-75 text-xs border border-current bg-transparent py-0 px-1"
-              />
-              新开对话
-            </span>
+            {activeScene?.shortcut && (
+              <span>
+                <ShortcutRenderer
+                  shortcut={activeScene.shortcut}
+                  className="inline-block scale-75 text-xs border border-current bg-transparent py-0 px-1"
+                />
+                {activeScene.name}
+              </span>
+            )}
           </div>
         ) : null}
       </div>

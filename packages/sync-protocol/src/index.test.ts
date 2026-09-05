@@ -216,6 +216,27 @@ describe('sync control messages', () => {
     ).toBe(true)
   })
 
+  it('accepts an explicit scroll distance ratio', () => {
+    const result = parseSyncControlMessage({
+      ...controlMessage,
+      payload: { direction: 'down', distanceRatio: 0.75 }
+    })
+
+    expect(result.success).toBe(true)
+    if (result.success) {
+      expect(result.data.payload.distanceRatio).toBe(0.75)
+    }
+  })
+
+  it('accepts a small distance ratio for continuous scrolling', () => {
+    expect(
+      parseSyncControlMessage({
+        ...controlMessage,
+        payload: { direction: 'down', distanceRatio: 0.1 }
+      }).success
+    ).toBe(true)
+  })
+
   it('rejects malformed or extended control messages', () => {
     expect(
       parseSyncControlMessage({
@@ -239,6 +260,18 @@ describe('sync control messages', () => {
       parseSyncControlMessage({
         ...controlMessage,
         apiKey: 'secret'
+      }).success
+    ).toBe(false)
+    expect(
+      parseSyncControlMessage({
+        ...controlMessage,
+        payload: { direction: 'down', distanceRatio: 0 }
+      }).success
+    ).toBe(false)
+    expect(
+      parseSyncControlMessage({
+        ...controlMessage,
+        payload: { direction: 'down', distanceRatio: 1.1 }
       }).success
     ).toBe(false)
   })

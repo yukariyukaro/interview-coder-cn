@@ -4,11 +4,24 @@ import codingPrompt from './prompts/coding.md?raw'
 import englishExamPrompt from './prompts/english-exam.md?raw'
 import aptitudeTestPrompt from './prompts/aptitude-test.md?raw'
 import generalQaPrompt from './prompts/general-qa.md?raw'
+import { platformAlt } from '../utils/env'
+
+export type ReasoningEffort = 'default' | 'minimal' | 'low' | 'medium' | 'high'
+export type ColorMode = 'light' | 'dark'
+
+const reasoningEfforts: ReasoningEffort[] = ['default', 'minimal', 'low', 'medium', 'high']
+
+function isReasoningEffort(value: unknown): value is ReasoningEffort {
+  return reasoningEfforts.includes(value as ReasoningEffort)
+}
 
 export interface PromptScene {
   id: string
   name: string
   prompt: string
+  model: string
+  reasoningEffort: ReasoningEffort
+  shortcut: string
   isPreset: boolean
 }
 
@@ -27,24 +40,36 @@ const createPresetScenes = (): PromptScene[] => [
     id: CODING_SCENE_ID,
     name: '解算法题',
     prompt: PRESET_SCENE_PROMPTS[CODING_SCENE_ID],
+    model: '',
+    reasoningEffort: 'default',
+    shortcut: `${platformAlt}+Enter`,
     isPreset: true
   },
   {
     id: 'english-exam',
     name: '英语考试',
     prompt: PRESET_SCENE_PROMPTS['english-exam'],
+    model: '',
+    reasoningEffort: 'low',
+    shortcut: `${platformAlt}+E`,
     isPreset: true
   },
   {
     id: 'aptitude-test',
     name: '能力测评',
     prompt: PRESET_SCENE_PROMPTS['aptitude-test'],
+    model: '',
+    reasoningEffort: 'low',
+    shortcut: `${platformAlt}+P`,
     isPreset: true
   },
   {
     id: 'general-qa',
     name: '通用问答',
     prompt: PRESET_SCENE_PROMPTS['general-qa'],
+    model: '',
+    reasoningEffort: 'default',
+    shortcut: `${platformAlt}+G`,
     isPreset: true
   }
 ]
@@ -84,6 +109,7 @@ interface Settings {
   toolbarHoverDelay: number
   /** How the captured screenshots are shown above the solution */
   screenshotDisplay: ScreenshotDisplay
+  colorMode: ColorMode
 
   screenshotAutoSave: boolean
   screenshotDir: string
@@ -107,6 +133,10 @@ interface SettingsStore extends Settings {
   adjustOpacity: (delta: number) => void
   syncSettings: (settings: Partial<Settings>) => void
   setActiveScene: (id: string) => void
+  updateScene: (
+    id: string,
+    update: Partial<Pick<PromptScene, 'model' | 'prompt' | 'reasoningEffort' | 'shortcut'>>
+  ) => void
   updateScenePrompt: (id: string, prompt: string) => void
   addScene: (name: string) => string
   removeScene: (id: string) => void
@@ -126,6 +156,7 @@ const defaultSettings: Settings = {
   showOverlayToolbar: true,
   toolbarHoverDelay: 1000,
   screenshotDisplay: 'gallery',
+  colorMode: 'dark',
 
   screenshotAutoSave: false,
   screenshotDir: '',
@@ -164,6 +195,17 @@ export const useSettingsStore = create<SettingsStore>()(
           customPrompt: composeCustomPrompt(state.scenes, id)
         }))
       },
+      updateScene: (id, update) => {
+        set((state) => {
+          const scenes = state.scenes.map((scene) =>
+            scene.id === id ? { ...scene, ...update } : scene
+          )
+          return {
+            scenes,
+            customPrompt: composeCustomPrompt(scenes, state.activeSceneId)
+          }
+        })
+      },
       updateScenePrompt: (id, prompt) => {
         set((state) => {
           const scenes = state.scenes.map((s) => (s.id === id ? { ...s, prompt } : s))
@@ -176,7 +218,18 @@ export const useSettingsStore = create<SettingsStore>()(
       addScene: (name) => {
         const id = `custom-${Date.now()}`
         set((state) => {
-          const scenes = [...state.scenes, { id, name, prompt: '', isPreset: false }]
+          const scenes = [
+            ...state.scenes,
+            {
+              id,
+              name,
+              prompt: '',
+              model: '',
+              reasoningEffort: 'default' as const,
+              shortcut: '',
+              isPreset: false
+            }
+          ]
           return {
             scenes,
             activeSceneId: id,
@@ -201,7 +254,7 @@ export const useSettingsStore = create<SettingsStore>()(
     }),
     {
       name: 'interview-coder-settings',
-      version: 8,
+      version: 9,
       migrate: (persisted, version) => {
         const state = persisted as Partial<Settings>
         // Drop the legacy codeLanguage field (language now lives in the prompt text)
@@ -220,7 +273,15 @@ export const useSettingsStore = create<SettingsStore>()(
           const legacyPrompt = (state.customPrompt ?? '').trim()
           if (legacyPrompt) {
             const id = `custom-${Date.now()}`
-            scenes.push({ id, name: '自定义场景', prompt: legacyPrompt, isPreset: false })
+            scenes.push({
+              id,
+              name: '自定义场景',
+              prompt: legacyPrompt,
+              model: '',
+              reasoningEffort: 'default',
+              shortcut: '',
+              isPreset: false
+            })
             activeSceneId = id
           }
           return { ...state, scenes, activeSceneId }
@@ -235,10 +296,24 @@ export const useSettingsStore = create<SettingsStore>()(
         state.scenes = [
           ...createPresetScenes().map((p) => {
             const saved = persistedScenes.find((s) => s.id === p.id)
-            // Restore the default prompt if a preset scene was left empty
-            return saved?.prompt.trim() ? saved : p
+            if (!saved) return p
+            return {
+              ...p,
+              ...saved,
+              // Restore the default prompt if a preset scene was left empty
+              prompt: saved.prompt.trim() ? saved.prompt : p.prompt
+            }
           }),
-          ...persistedScenes.filter((s) => !s.isPreset)
+          ...persistedScenes
+            .filter((s) => !s.isPreset)
+            .map((scene) => ({
+              ...scene,
+              model: typeof scene.model === 'string' ? scene.model : '',
+              reasoningEffort: isReasoningEffort(scene.reasoningEffort)
+                ? scene.reasoningEffort
+                : ('default' as const),
+              shortcut: typeof scene.shortcut === 'string' ? scene.shortcut : ''
+            }))
         ]
         if (!state.scenes.some((s) => s.id === state.activeSceneId)) {
           state.activeSceneId = CODING_SCENE_ID

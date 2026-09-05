@@ -25,6 +25,82 @@
   @apply h-[calc(100vh-36px)] overflow-y-auto bg-gray-500;
 }
 
+html[data-theme='light'] #app-header {
+  color: #111827;
+  background-color: rgb(255 255 255 / 92%);
+  border-bottom: 1px solid #d1d5db;
+}
+
+html[data-theme='light'] #app-content {
+  color: #111827;
+  background-color: #ffffff;
+}
+
+html[data-theme='light'] :is(.settings-page, .help-page) > div {
+  color: #111827;
+  background-color: rgb(255 255 255 / 96%);
+  border: 1px solid #d1d5db;
+}
+
+html[data-theme='light']
+  #app-content
+  :is(
+    .text-gray-100,
+    .text-gray-300,
+    .text-gray-400,
+    .text-gray-500,
+    .text-gray-600,
+    .text-gray-700
+  ) {
+  color: #111827;
+}
+
+html[data-theme='light'] .app-markdown {
+  --tw-prose-body: #111827;
+  --tw-prose-headings: #030712;
+  --tw-prose-lead: #374151;
+  --tw-prose-links: #111827;
+  --tw-prose-bold: #030712;
+  --tw-prose-counters: #374151;
+  --tw-prose-bullets: #6b7280;
+  --tw-prose-hr: #d1d5db;
+  --tw-prose-quotes: #111827;
+  --tw-prose-quote-borders: #d1d5db;
+  --tw-prose-captions: #4b5563;
+  --tw-prose-kbd: #111827;
+  --tw-prose-code: #111827;
+  --tw-prose-pre-code: #111827;
+  --tw-prose-pre-bg: #f3f4f6;
+  --tw-prose-th-borders: #9ca3af;
+  --tw-prose-td-borders: #d1d5db;
+}
+
+html[data-theme='light'] .app-markdown .hljs {
+  color: #111827;
+  background-color: #f3f4f6;
+}
+
+html[data-theme='light'] .app-status-bar {
+  color: #111827;
+  background-color: rgb(255 255 255 / 70%);
+}
+
+html[data-theme='light'] .screenshot-count {
+  color: #111827;
+  background-color: rgb(255 255 255 / 85%);
+  border-color: #9ca3af;
+}
+
+html[data-theme='light'] .transcription-panel {
+  color: #111827;
+  background-color: rgb(255 255 255 / 92%);
+  border: 1px solid #d1d5db;
+}
+
+html[data-theme='light'] .transcription-panel .transcription-scroll {
+  color: #111827;
+}
+
 .transcription-scroll {
   overflow: auto;
   scrollbar-gutter: stable;
@@ -48,6 +124,17 @@
 .overlay-toolbar {
   @apply flex h-11 items-center gap-0.5 rounded-md bg-gray-700/80 p-2 text-white;
   -webkit-app-region: no-drag;
+}
+
+html[data-theme='light'] .overlay-toolbar {
+  color: #111827;
+  background-color: rgb(255 255 255 / 92%);
+  border: 1px solid #d1d5db;
+}
+
+html[data-theme='light'] .overlay-toolbar button:hover {
+  color: #111827;
+  background-color: rgb(17 24 39 / 8%);
 }
 
 .overlay-toolbar button {

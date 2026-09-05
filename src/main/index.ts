@@ -27,13 +27,13 @@ process.on('uncaughtException', (error) => {
   console.error(error)
 })
 import { electronApp, optimizer } from '@electron-toolkit/utils'
-import './shortcuts'
-import './transcription'
-import './window-resize'
-import { createWindow } from './main-window'
-import { initAutoUpdater } from './auto-updater'
-import { applyDockVisibility } from './settings'
-import { handleAppActivate } from './window-lifecycle'
+import './input/shortcuts'
+import './input/transcription'
+import './windows/window-resize'
+import { createWindow } from './windows/main-window'
+import { initAutoUpdater } from './updater/auto-updater'
+import { applyDockVisibility } from './core/settings'
+import { handleAppActivate } from './windows/window-lifecycle'
 
 // This method will be called when Electron has finished
 // initialization and is ready to create browser windows.

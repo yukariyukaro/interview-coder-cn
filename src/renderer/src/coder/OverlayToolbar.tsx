@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 import { TOOLBAR_ACTIONS, type ToolbarActionName } from '@/lib/toolbar-actions'
+import type { ColorMode } from '@/lib/store/settings'
 import type { LucideIcon } from 'lucide-react'
 import { WindowResizeHandles } from '@/components/WindowResizeHandles'
 
@@ -16,6 +17,7 @@ const BUTTON_GAP = 2
  */
 export function OverlayToolbar() {
   const [hoverDelay, setHoverDelay] = useState(0)
+  const [colorMode, setColorMode] = useState<ColorMode>('dark')
   const barRef = useRef<HTMLDivElement>(null)
   const visibleCount = useVisibleActionCount(barRef)
 
@@ -23,14 +25,20 @@ export function OverlayToolbar() {
   useEffect(() => {
     window.api.getAppSettings().then((settings) => {
       setHoverDelay(settings.toolbarHoverDelay || 0)
+      setColorMode(settings.colorMode)
     })
-    window.api.onSyncToolbarSettings(({ hoverDelay }) => {
+    window.api.onSyncToolbarSettings(({ hoverDelay, colorMode }) => {
       setHoverDelay(hoverDelay || 0)
+      setColorMode(colorMode)
     })
     return () => {
       window.api.removeSyncToolbarSettingsListener()
     }
   }, [])
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = colorMode
+  }, [colorMode])
 
   return (
     <div ref={barRef} className="overlay-toolbar overlay-toolbar-root">

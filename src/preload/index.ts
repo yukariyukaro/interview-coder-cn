@@ -1,7 +1,7 @@
 import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import type { AppSettings } from '../main/settings'
-import type { AppState } from '../main/state'
+import type { AppSettings } from '../main/core/settings'
+import type { AppState } from '../main/core/state'
 
 // Custom APIs for renderer
 const api = {
@@ -22,6 +22,14 @@ const api = {
   },
   removeSilentModeChangedListener: () => {
     ipcRenderer.removeAllListeners('silent-mode-changed')
+  },
+  onActiveSceneChanged: (callback: (sceneId: string) => void) => {
+    ipcRenderer.on('active-scene-changed', (_event, sceneId) => {
+      if (typeof sceneId === 'string') callback(sceneId)
+    })
+  },
+  removeActiveSceneChangedListener: () => {
+    ipcRenderer.removeAllListeners('active-scene-changed')
   },
 
   // Resize transparent frameless windows without toggling Electron's native resizable style
@@ -72,7 +80,9 @@ const api = {
   setToolbarVisible: (visible: boolean) => ipcRenderer.invoke('setToolbarVisible', visible),
 
   // Settings the toolbar window needs, pushed from main (its own store is a separate copy)
-  onSyncToolbarSettings: (callback: (settings: { hoverDelay: number }) => void) => {
+  onSyncToolbarSettings: (
+    callback: (settings: { hoverDelay: number; colorMode: AppSettings['colorMode'] }) => void
+  ) => {
     ipcRenderer.on('sync-toolbar-settings', (_event, settings) => {
       callback(settings)
     })
@@ -144,8 +154,10 @@ const api = {
   },
 
   // Listen for scroll page up
-  onScrollPageUp: (callback: () => void) => {
-    ipcRenderer.on('scroll-page-up', callback)
+  onScrollPageUp: (callback: (distanceRatio?: number) => void) => {
+    ipcRenderer.on('scroll-page-up', (_event, distanceRatio) => {
+      callback(distanceRatio)
+    })
   },
   // Remove scroll page up listener
   removeScrollPageUpListener: () => {
@@ -163,8 +175,10 @@ const api = {
   },
 
   // Listen for scroll page down
-  onScrollPageDown: (callback: () => void) => {
-    ipcRenderer.on('scroll-page-down', callback)
+  onScrollPageDown: (callback: (distanceRatio?: number) => void) => {
+    ipcRenderer.on('scroll-page-down', (_event, distanceRatio) => {
+      callback(distanceRatio)
+    })
   },
   // Remove scroll page down listener
   removeScrollPageDownListener: () => {

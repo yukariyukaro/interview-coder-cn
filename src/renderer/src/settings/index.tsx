@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react'
 import { Link } from 'react-router'
 import {
   ArrowLeft,
-  SquareTerminal,
   Palette,
   Shield,
   Bot,
@@ -11,27 +10,14 @@ import {
   Keyboard,
   FolderOpen,
   Mic,
-  Plus,
-  RotateCcw,
-  X
+  Moon,
+  Sun
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Slider } from '@/components/ui/slider'
-import { Textarea } from '@/components/ui/textarea'
 import { Switch } from '@/components/ui/switch'
-import { Input } from '@/components/ui/input'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle
-} from '@/components/ui/dialog'
-import { cn } from '@/lib/utils'
 import {
   useSettingsStore,
-  PRESET_SCENE_PROMPTS,
   type ScreenshotDisplay,
   OPACITY_MIN,
   OPACITY_MAX,
@@ -48,6 +34,7 @@ import {
   SelectValue
 } from '@/components/ui/select'
 import { MobileSyncSettings } from './MobileSyncSettings'
+import { SceneSettingsSection } from './SceneSettings'
 
 export default function SettingsPage() {
   const {
@@ -56,11 +43,10 @@ export default function SettingsPage() {
     showOverlayToolbar,
     toolbarHoverDelay,
     screenshotDisplay,
+    colorMode,
     apiBaseURL,
     apiKey,
     model,
-    scenes,
-    activeSceneId,
     screenshotAutoSave,
     screenshotDir,
     dashscopeApiKey,
@@ -68,21 +54,11 @@ export default function SettingsPage() {
     audioOutputDeviceId,
     hideDockIcon,
     silentMode,
-    updateSetting,
-    setActiveScene,
-    updateScenePrompt,
-    addScene,
-    removeScene
+    updateSetting
   } = useSettingsStore()
   const [showApiKey, setShowApiKey] = useState(false)
   const [showDashscopeApiKey, setShowDashscopeApiKey] = useState(false)
-  const [addSceneOpen, setAddSceneOpen] = useState(false)
-  const [newSceneName, setNewSceneName] = useState('')
-  const [sceneToDelete, setSceneToDelete] = useState<string | null>(null)
   const [audioDevices, setAudioDevices] = useState<MediaDeviceInfo[]>([])
-
-  const activeScene = scenes.find((s) => s.id === activeSceneId)
-  const deletingScene = scenes.find((s) => s.id === sceneToDelete)
 
   useEffect(() => {
     return () => {
@@ -107,19 +83,6 @@ export default function SettingsPage() {
     loadDevices()
   }, [])
 
-  const handleAddScene = () => {
-    const name = newSceneName.trim()
-    if (!name) return
-    addScene(name)
-    setNewSceneName('')
-    setAddSceneOpen(false)
-  }
-
-  const handleResetScenePrompt = () => {
-    if (!activeScene?.isPreset) return
-    updateScenePrompt(activeScene.id, PRESET_SCENE_PROMPTS[activeScene.id] ?? '')
-  }
-
   return (
     <>
       {/* Header */}
@@ -135,7 +98,7 @@ export default function SettingsPage() {
       </div>
 
       {/* Settings Content */}
-      <div id="app-content" className="flex flex-col gap-4 p-8">
+      <div id="app-content" className="settings-page flex flex-col gap-4 p-8">
         {/* AI Settings */}
         <div className="bg-gray-300/80 rounded-lg p-6">
           <h2 className="text-lg font-semibold mb-4 flex items-center">
@@ -183,9 +146,9 @@ export default function SettingsPage() {
 
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
-                Model
+                默认模型
                 <span className="ml-2 text-xs font-light">
-                  这里列了几个流行的国内和国外模型，请自行确认你的平台是否支持
+                  场景未指定模型时使用；请自行确认接口平台是否支持
                 </span>
               </label>
               <SelectModel value={model} onChange={(val) => updateSetting('model', val)} />
@@ -294,142 +257,7 @@ export default function SettingsPage() {
             </div>
           </div>
         </div>
-        <div className="bg-gray-300/80 rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center">
-            <SquareTerminal className="h-5 w-5 mr-2" />
-            解题设置
-          </h2>
-
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium">
-                使用场景
-                <span className="ml-2 text-xs font-light">
-                  选择场景后可编辑对应的系统提示词，修改会自动保存；也可新增自己的场景
-                </span>
-              </label>
-              <div className="flex flex-wrap items-center gap-2 mt-2">
-                {scenes.map((scene) => (
-                  <div
-                    key={scene.id}
-                    className={cn(
-                      'group flex items-center rounded-full border text-sm transition-colors cursor-pointer select-none',
-                      scene.id === activeSceneId
-                        ? 'bg-blue-600 border-blue-600 text-white'
-                        : 'bg-white border-gray-300 hover:border-blue-400'
-                    )}
-                    onClick={() => setActiveScene(scene.id)}
-                  >
-                    <span className={cn('py-1 pl-3', scene.isPreset ? 'pr-3' : 'pr-1')}>
-                      {scene.name}
-                    </span>
-                    {!scene.isPreset && (
-                      <button
-                        className="mr-1.5 p-0.5 rounded-full opacity-60 hover:opacity-100 hover:bg-black/10"
-                        title="删除该场景"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSceneToDelete(scene.id)
-                        }}
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  className="flex items-center gap-1 rounded-full border border-dashed border-gray-400 bg-transparent px-3 py-1 text-sm text-gray-600 hover:border-blue-500 hover:text-blue-600 transition-colors"
-                  onClick={() => setAddSceneOpen(true)}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                  新增场景
-                </button>
-              </div>
-            </div>
-
-            {activeScene && (
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-sm font-medium">
-                    系统提示词
-                    <span className="ml-2 text-xs font-light">「{activeScene.name}」场景</span>
-                  </label>
-                  {activeScene.isPreset && (
-                    <button
-                      className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-900 transition-colors"
-                      title="恢复该场景的默认提示词"
-                      onClick={handleResetScenePrompt}
-                    >
-                      <RotateCcw className="h-3 w-3" />
-                      恢复默认
-                    </button>
-                  )}
-                </div>
-                <Textarea
-                  value={activeScene.prompt}
-                  onChange={(e) => updateScenePrompt(activeScene.id, e.target.value)}
-                  placeholder="请输入该场景的系统提示词, 示例: 你是一个解题助手, 请根据「截图」和「语音转录内容」给出相关回答。"
-                  className="w-full min-h-24 max-h-100 bg-white"
-                  rows={6}
-                />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Add scene dialog */}
-        <Dialog open={addSceneOpen} onOpenChange={setAddSceneOpen}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>新增场景</DialogTitle>
-              <DialogDescription>创建后可为该场景编写专属的系统提示词</DialogDescription>
-            </DialogHeader>
-            <Input
-              value={newSceneName}
-              onChange={(e) => setNewSceneName(e.target.value)}
-              placeholder="场景名称，如：数学考试"
-              maxLength={20}
-              autoFocus
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleAddScene()
-              }}
-            />
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setAddSceneOpen(false)}>
-                取消
-              </Button>
-              <Button onClick={handleAddScene} disabled={!newSceneName.trim()}>
-                创建
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-
-        {/* Delete scene confirm dialog */}
-        <Dialog open={!!sceneToDelete} onOpenChange={(open) => !open && setSceneToDelete(null)}>
-          <DialogContent className="sm:max-w-sm">
-            <DialogHeader>
-              <DialogTitle>删除场景</DialogTitle>
-              <DialogDescription>
-                确定删除场景「{deletingScene?.name}」吗？其提示词内容将一并删除，且无法恢复。
-              </DialogDescription>
-            </DialogHeader>
-            <DialogFooter>
-              <Button variant="outline" onClick={() => setSceneToDelete(null)}>
-                取消
-              </Button>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  if (sceneToDelete) removeScene(sceneToDelete)
-                  setSceneToDelete(null)
-                }}
-              >
-                删除
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <SceneSettingsSection />
 
         {/* Appearance Settings */}
         <div className="bg-gray-300/80 rounded-lg p-6">
@@ -439,6 +267,34 @@ export default function SettingsPage() {
           </h2>
 
           <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <label className="text-sm font-medium">显示模式</label>
+              <div className="flex w-60 items-center rounded-md border border-gray-300 bg-white p-1">
+                <Button
+                  type="button"
+                  variant={colorMode === 'light' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="flex-1"
+                  aria-pressed={colorMode === 'light'}
+                  onClick={() => updateSetting('colorMode', 'light')}
+                >
+                  <Sun className="h-4 w-4" />
+                  日间
+                </Button>
+                <Button
+                  type="button"
+                  variant={colorMode === 'dark' ? 'default' : 'ghost'}
+                  size="sm"
+                  className="flex-1"
+                  aria-pressed={colorMode === 'dark'}
+                  onClick={() => updateSetting('colorMode', 'dark')}
+                >
+                  <Moon className="h-4 w-4" />
+                  夜间
+                </Button>
+              </div>
+            </div>
+
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
                 窗口透明度

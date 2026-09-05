@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { writeFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { settings } from './settings'
+import { settings } from '../core/settings'
 
 function getSaveDir(): string {
   return settings.screenshotDir || join(app.getPath('pictures'), 'InterviewCoder')

@@ -1,5 +1,6 @@
 import { Keyboard } from 'lucide-react'
 import { useShortcutsStore } from '@/lib/store/shortcuts'
+import { useSettingsStore } from '@/lib/store/settings'
 import ShortcutRenderer from '@/components/ShortcutRenderer'
 import { HelpSection } from './components'
 
@@ -11,10 +12,28 @@ export function Shortcuts() {
       description="快捷键是操作应用的主要方式，您可以在设置中自定义快捷键。"
     >
       <ShortcutItemGroup category="Window Management" />
+      <SceneShortcutItemGroup />
       <ShortcutItemGroup category="Screenshot & AI" />
       <ShortcutItemGroup category="Navigation" />
       <ShortcutItemGroup category="Window Movement" />
     </HelpSection>
+  )
+}
+
+function SceneShortcutItemGroup() {
+  const scenes = useSettingsStore((state) => state.scenes)
+  const configuredScenes = scenes.filter((scene) => scene.shortcut)
+  if (configuredScenes.length === 0) return null
+
+  return (
+    <div className="space-y-2">
+      <h3 className="text-sm text-gray-500">场景截图</h3>
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {configuredScenes.map((scene) => (
+          <ShortcutItem key={scene.id} action={`${scene.name}截图`} shortcutKey={scene.shortcut} />
+        ))}
+      </div>
+    </div>
   )
 }
 
