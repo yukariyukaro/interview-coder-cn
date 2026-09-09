@@ -261,6 +261,20 @@ const callbacks: Record<string, () => void> = {
     sendMobileScrollCommand('down', distanceRatio)
   },
 
+  pageLeft: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+    const distanceRatio = scrollInputController.next('left')
+    mainWindow.webContents.send('scroll-page-left', distanceRatio)
+  },
+
+  pageRight: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+    const distanceRatio = scrollInputController.next('right')
+    mainWindow.webContents.send('scroll-page-right', distanceRatio)
+  },
+
   moveMainWindowUp: () => {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed()) return
@@ -312,6 +326,8 @@ const clickableActions = new Set([
   'decreaseOpacity',
   'pageUp',
   'pageDown',
+  'pageLeft',
+  'pageRight',
   'moveMainWindowUp',
   'moveMainWindowDown',
   'moveMainWindowLeft',

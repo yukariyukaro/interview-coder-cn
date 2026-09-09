@@ -115,6 +115,8 @@ export function CustomShortcuts() {
           <h3 className="text-sm text-gray-500">页面导航</h3>
           <Shortcut label="电脑与手机同步向上翻页" shortcut="pageUp" />
           <Shortcut label="电脑与手机同步向下翻页" shortcut="pageDown" />
+          <Shortcut label="电脑端向左翻页" shortcut="pageLeft" />
+          <Shortcut label="电脑端向右翻页" shortcut="pageRight" />
         </div>
 
         {/* Window Movement */}

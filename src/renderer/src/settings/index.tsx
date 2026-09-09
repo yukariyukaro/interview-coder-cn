@@ -8,7 +8,6 @@ import {
   Eye,
   EyeOff,
   Keyboard,
-  FolderOpen,
   Mic,
   Moon,
   Sun
@@ -35,6 +34,7 @@ import {
 } from '@/components/ui/select'
 import { MobileSyncSettings } from './MobileSyncSettings'
 import { SceneSettingsSection } from './SceneSettings'
+import { LocalSaveSettings } from './LocalSaveSettings'
 
 export default function SettingsPage() {
   const {
@@ -47,8 +47,6 @@ export default function SettingsPage() {
     apiBaseURL,
     apiKey,
     model,
-    screenshotAutoSave,
-    screenshotDir,
     dashscopeApiKey,
     audioInputDeviceId,
     audioOutputDeviceId,
@@ -410,49 +408,7 @@ export default function SettingsPage() {
           <CustomShortcuts />
         </div>
 
-        {/* Screenshot Save Settings */}
-        <div className="bg-gray-300/80 rounded-lg p-6">
-          <h2 className="text-lg font-semibold mb-4 flex items-center">
-            <FolderOpen className="h-5 w-5 mr-2" />
-            保存截图
-          </h2>
-
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <label className="text-sm font-medium">
-                保存截图到本地
-                <span className="ml-2 text-xs font-light">
-                  开启后，每次截图都会自动保存到指定目录
-                </span>
-              </label>
-              <Switch
-                className="scale-y-90"
-                checked={screenshotAutoSave}
-                onCheckedChange={(checked) => updateSetting('screenshotAutoSave', checked)}
-              />
-            </div>
-            {screenshotAutoSave && (
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">
-                  保存目录
-                  <span className="ml-2 text-xs font-light">
-                    可点击右侧内容重新选择保存目录（选择弹窗可能被本窗口遮挡）
-                  </span>
-                </label>
-                <button
-                  className="text-xs text-gray-600 max-w-48 truncate hover:text-gray-900 cursor-pointer transition-colors"
-                  title="点击选择保存目录"
-                  onClick={async () => {
-                    const dir = await window.api.selectScreenshotDir()
-                    if (dir) updateSetting('screenshotDir', dir)
-                  }}
-                >
-                  {screenshotDir || '默认: 图片/InterviewCoder'}
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
+        <LocalSaveSettings />
 
         <MobileSyncSettings />
 

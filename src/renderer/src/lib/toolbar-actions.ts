@@ -38,6 +38,8 @@ export const TOOLBAR_ACTIONS: ToolbarAction[] = [
   { action: 'ignoreOrEnableMouse', Icon: MousePointer2, label: '切换鼠标穿透' },
   { action: 'pageUp', Icon: ChevronUp, label: '向上翻页' },
   { action: 'pageDown', Icon: ChevronDown, label: '向下翻页' },
+  { action: 'pageLeft', Icon: ArrowLeft, label: '向左翻页' },
+  { action: 'pageRight', Icon: ArrowRight, label: '向右翻页' },
   { action: 'moveMainWindowUp', Icon: ArrowUp, label: '向上移动窗口' },
   { action: 'moveMainWindowLeft', Icon: ArrowLeft, label: '向左移动窗口' },
   { action: 'moveMainWindowDown', Icon: ArrowDown, label: '向下移动窗口' },

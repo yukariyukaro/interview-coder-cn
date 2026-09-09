@@ -86,6 +86,8 @@ const getShortcutDescription = (action: string) => {
     clearTranscription: '清除转录文本（不提交给AI）',
     pageUp: '电脑与手机同步向上翻页',
     pageDown: '电脑与手机同步向下翻页',
+    pageLeft: '电脑端向左翻页',
+    pageRight: '电脑端向右翻页',
     moveMainWindowUp: '向上移动窗口',
     moveMainWindowDown: '向下移动窗口',
     moveMainWindowLeft: '向左移动窗口',

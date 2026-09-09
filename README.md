@@ -13,6 +13,7 @@
 - **屏幕分享隐身**：即使被要求分享屏幕，对方也看不到本助手的窗口
 - **静默后台运行**：主窗口和悬浮工具条完全隐藏后，截图和 AI 快捷键仍可继续工作
 - **移动端同步**：通过配对码将解题状态和流式答案同步到 Android/iOS 客户端，不传输截图和 AI Key
+- **本地归档**：可分别自动保存截图与 AI 完整回答；回答以 Markdown 保存，同一会话持续更新同一个文件
 - **不抢占焦点**：窗口置顶半透明展示，不会导致原页面失焦，可规避“跳出网页”检测
 
 ### 适用场景
@@ -75,6 +76,9 @@ API_KEY="sk-1234567890" # 代理服务商的 API Key，这里只是示例，需�
 - 能力测评/选择题：macOS `Option+P`，Windows `Ctrl+P`
 - 英语考试：macOS `Option+E`，Windows `Ctrl+E`
 - 通用问答：macOS `Option+G`，Windows `Ctrl+G`
+- 向上/向下翻页：macOS `Command+J/K`，Windows `Ctrl+J/K`
+- 向左/向右翻页：macOS `Command+U/I`，Windows `Ctrl+U/I`
+- `Command/Ctrl+Left/Right` 仍用于移动窗口，不会横向滚动答案
 
 ### 5. （可选）配置语音转录
 

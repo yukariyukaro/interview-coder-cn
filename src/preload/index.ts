@@ -70,6 +70,8 @@ const api = {
       | 'decreaseOpacity'
       | 'pageUp'
       | 'pageDown'
+      | 'pageLeft'
+      | 'pageRight'
       | 'moveMainWindowUp'
       | 'moveMainWindowDown'
       | 'moveMainWindowLeft'
@@ -183,6 +185,28 @@ const api = {
   // Remove scroll page down listener
   removeScrollPageDownListener: () => {
     ipcRenderer.removeAllListeners('scroll-page-down')
+  },
+
+  // Listen for scroll page left
+  onScrollPageLeft: (callback: (distanceRatio?: number) => void) => {
+    ipcRenderer.on('scroll-page-left', (_event, distanceRatio) => {
+      callback(distanceRatio)
+    })
+  },
+  // Remove scroll page left listener
+  removeScrollPageLeftListener: () => {
+    ipcRenderer.removeAllListeners('scroll-page-left')
+  },
+
+  // Listen for scroll page right
+  onScrollPageRight: (callback: (distanceRatio?: number) => void) => {
+    ipcRenderer.on('scroll-page-right', (_event, distanceRatio) => {
+      callback(distanceRatio)
+    })
+  },
+  // Remove scroll page right listener
+  removeScrollPageRightListener: () => {
+    ipcRenderer.removeAllListeners('scroll-page-right')
   },
 
   // AI loading events

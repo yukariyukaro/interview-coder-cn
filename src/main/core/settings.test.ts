@@ -113,6 +113,13 @@ describe('settings IPC', () => {
     expect(sanitizeAppSettingsUpdate({ colorMode: 'system' })).toEqual({})
   })
 
+  it('accepts only boolean answer auto-save settings', () => {
+    expect(sanitizeAppSettingsUpdate({ answerAutoSave: true })).toEqual({
+      answerAutoSave: true
+    })
+    expect(sanitizeAppSettingsUpdate({ answerAutoSave: 'true' })).toEqual({})
+  })
+
   it('pushes color mode changes to the independent toolbar renderer', () => {
     const handler = mocks.handlers.get('updateAppSettings')
     expect(handler).toBeTypeOf('function')

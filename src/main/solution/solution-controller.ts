@@ -2,6 +2,7 @@ import type { BrowserWindow } from 'electron'
 import type { ModelMessage } from 'ai'
 
 import { getFollowUpStream, getGeneralStream, getSolutionStream } from './ai'
+import { createAnswerFilename, saveAnswerToDisk } from './save-answer'
 import { saveScreenshotToDisk } from './save-screenshot'
 import { getEffectiveAISettings, settings } from '../core/settings'
 import { solutionEventPublisher } from './solution-events'
@@ -31,6 +32,7 @@ let conversationMessages: ModelMessage[] = []
 let recentScreenshots: string[] = []
 let screenshotCount = 0
 let hasAppendSeparator = false
+let answerFilename = ''
 
 function extractErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return String(error) || '未知错误'
@@ -63,6 +65,7 @@ function sendSolutionDelta(text: string): void {
 
 function resetSolutionSession(mainWindow: BrowserWindow): void {
   solutionDeltaBuffer.clear()
+  answerFilename = createAnswerFilename()
   solutionEventPublisher.resetSession()
   mainWindow.webContents.send('solution-clear')
 }
@@ -81,10 +84,12 @@ function sendRequestStarted(mainWindow: BrowserWindow): void {
   solutionEventPublisher.publish('request.started', {})
 }
 
-function sendRequestCompleted(mainWindow: BrowserWindow): void {
+async function sendRequestCompleted(mainWindow: BrowserWindow): Promise<void> {
   solutionDeltaBuffer.flush()
   mainWindow.webContents.send('solution-complete')
   solutionEventPublisher.publish('request.completed', {})
+  const snapshot = solutionEventPublisher.getSnapshot()
+  await saveAnswerToDisk(snapshot.payload.solution, answerFilename)
 }
 
 function sendRequestStopped(mainWindow: BrowserWindow): void {
@@ -156,7 +161,7 @@ async function runStream({
     }
 
     onCompleted(assistantResponse)
-    sendRequestCompleted(mainWindow)
+    await sendRequestCompleted(mainWindow)
   } catch (error) {
     if (context.controller.signal.aborted) {
       if (context.reason === 'user') sendRequestStopped(mainWindow)

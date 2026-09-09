@@ -1,10 +1,14 @@
-import { DEFAULT_SCROLL_DISTANCE_RATIO, type ScrollDirection } from '@interview-coder/sync-protocol'
+import { DEFAULT_SCROLL_DISTANCE_RATIO } from '@interview-coder/sync-protocol'
+
+export type ScrollDirection = 'up' | 'down' | 'left' | 'right'
+
+type VerticalScrollDirection = Extract<ScrollDirection, 'up' | 'down'>
 
 type ScrollTargetInput = {
   direction: ScrollDirection
   currentOffset: number
-  viewportHeight: number
-  contentHeight: number
+  viewportSize: number
+  contentSize: number
   distanceRatio?: number
 }
 
@@ -23,19 +27,37 @@ export function getScrollBehavior({
     : 'smooth'
 }
 
-export function getNextScrollTop({
+export function getNextScrollOffset({
   direction,
   currentOffset,
-  viewportHeight,
-  contentHeight,
+  viewportSize,
+  contentSize,
   distanceRatio = DEFAULT_SCROLL_DISTANCE_RATIO
 }: ScrollTargetInput): number {
-  const maxOffset = Math.max(0, contentHeight - viewportHeight)
+  const maxOffset = Math.max(0, contentSize - viewportSize)
   const boundedCurrentOffset = Math.min(maxOffset, Math.max(0, currentOffset))
-  if (maxOffset === 0 || viewportHeight <= 0) return boundedCurrentOffset
+  if (maxOffset === 0 || viewportSize <= 0) return boundedCurrentOffset
 
-  const pageDistance = viewportHeight * distanceRatio
+  const pageDistance = viewportSize * distanceRatio
   const nextOffset =
-    direction === 'down' ? boundedCurrentOffset + pageDistance : boundedCurrentOffset - pageDistance
+    direction === 'down' || direction === 'right'
+      ? boundedCurrentOffset + pageDistance
+      : boundedCurrentOffset - pageDistance
   return Math.min(maxOffset, Math.max(0, nextOffset))
+}
+
+export function getNextScrollTop(input: {
+  direction: VerticalScrollDirection
+  currentOffset: number
+  viewportHeight: number
+  contentHeight: number
+  distanceRatio?: number
+}): number {
+  return getNextScrollOffset({
+    direction: input.direction,
+    currentOffset: input.currentOffset,
+    viewportSize: input.viewportHeight,
+    contentSize: input.contentHeight,
+    distanceRatio: input.distanceRatio
+  })
 }

@@ -160,7 +160,7 @@ src/
 
 | Store | File | Persisted | Key State |
 |-------|------|-----------|-----------|
-| `useSettingsStore` | `lib/store/settings.ts` | Yes (v9) | `apiBaseURL`, `apiKey`, `model`, `customModels`, `scenes` (prompt scenes), `activeSceneId`, `customPrompt` (derived from active scene), `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `screenshotDisplay`, `dashscopeApiKey` |
+| `useSettingsStore` | `lib/store/settings.ts` | Yes (v10) | `apiBaseURL`, `apiKey`, `model`, `customModels`, `scenes` (prompt scenes), `activeSceneId`, `customPrompt` (derived from active scene), `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `screenshotDisplay`, `screenshotAutoSave`, `answerAutoSave`, `screenshotDir`, `dashscopeApiKey` |
 | `useShortcutsStore` | `lib/store/shortcuts.ts` | Yes (v7) | `shortcuts` (action → key mapping with categories) |
 | `useSolutionStore` | `lib/store/solution.ts` | No | `isLoading`, `solutionChunks`, `screenshotData`, `errorMessage` |
 | `useTranscriptionStore` | `lib/store/transcription.ts` | No | `isTranscribing`, `transcriptionText`, `errorMessage` |

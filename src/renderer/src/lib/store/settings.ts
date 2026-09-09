@@ -122,6 +122,7 @@ interface Settings {
   colorMode: ColorMode
 
   screenshotAutoSave: boolean
+  answerAutoSave: boolean
   screenshotDir: string
 
   dashscopeApiKey: string
@@ -174,6 +175,7 @@ const defaultSettings: Settings = {
   colorMode: 'dark',
 
   screenshotAutoSave: false,
+  answerAutoSave: false,
   screenshotDir: '',
 
   dashscopeApiKey: '',

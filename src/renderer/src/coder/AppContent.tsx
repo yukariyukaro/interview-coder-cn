@@ -1,13 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
-import type { ScrollDirection } from '@interview-coder/sync-protocol'
 import { Images } from 'lucide-react'
 import { useSettingsStore, type ScreenshotDisplay } from '@/lib/store/settings'
 import { useSolutionStore } from '@/lib/store/solution'
-import { getNextScrollTop, getScrollBehavior } from '@/lib/scroll'
+import { getNextScrollOffset, getScrollBehavior } from '@/lib/scroll'
 import MarkdownRenderer from '@/components/MarkdownRenderer'
 import ShortcutRenderer from '@/components/ShortcutRenderer'
 
 const CONTINUOUS_SCROLL_TARGET_HOLD_MS = 350
+type ScrollAxis = 'vertical' | 'horizontal'
 
 export function AppContent() {
   const {
@@ -26,8 +26,17 @@ export function AppContent() {
 
   const [recentScreenshots, setRecentScreenshots] = useState<string[]>([])
   const isStreamingRef = useRef(isLoading)
-  const scrollTargetRef = useRef<number | null>(null)
-  const scrollTargetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const scrollTargetsRef = useRef<{ vertical: number | null; horizontal: number | null }>({
+    vertical: null,
+    horizontal: null
+  })
+  const scrollTargetTimersRef = useRef<{
+    vertical: ReturnType<typeof setTimeout> | null
+    horizontal: ReturnType<typeof setTimeout> | null
+  }>({
+    vertical: null,
+    horizontal: null
+  })
   // Main keeps only the last 5 thumbnails, but every screenshot went to the AI
   const [screenshotTotal, setScreenshotTotal] = useState(0)
   isStreamingRef.current = isLoading
@@ -100,42 +109,49 @@ export function AppContent() {
     const container = document.getElementById('app-content')
     if (!container) return
 
-    const clearProgrammaticTarget = () => {
-      scrollTargetRef.current = null
-      if (scrollTargetTimerRef.current !== null) {
-        clearTimeout(scrollTargetTimerRef.current)
-        scrollTargetTimerRef.current = null
-      }
+    const clearProgrammaticTarget = (axis?: ScrollAxis) => {
+      const axes: ScrollAxis[] = axis ? [axis] : ['vertical', 'horizontal']
+      axes.forEach((currentAxis) => {
+        scrollTargetsRef.current[currentAxis] = null
+        const timer = scrollTargetTimersRef.current[currentAxis]
+        if (timer !== null) {
+          clearTimeout(timer)
+          scrollTargetTimersRef.current[currentAxis] = null
+        }
+      })
     }
 
-    const scheduleProgrammaticTargetReset = () => {
-      if (scrollTargetTimerRef.current !== null) {
-        clearTimeout(scrollTargetTimerRef.current)
-      }
-      scrollTargetTimerRef.current = setTimeout(() => {
-        scrollTargetRef.current = null
-        scrollTargetTimerRef.current = null
+    const scheduleProgrammaticTargetReset = (axis: ScrollAxis) => {
+      const timer = scrollTargetTimersRef.current[axis]
+      if (timer !== null) clearTimeout(timer)
+      scrollTargetTimersRef.current[axis] = setTimeout(() => {
+        scrollTargetsRef.current[axis] = null
+        scrollTargetTimersRef.current[axis] = null
       }, CONTINUOUS_SCROLL_TARGET_HOLD_MS)
     }
 
-    const scrollPage = (direction: ScrollDirection, distanceRatio?: number) => {
-      const currentOffset = scrollTargetRef.current ?? container.scrollTop
-      const target = getNextScrollTop({
+    const scrollPage = (direction: 'up' | 'down' | 'left' | 'right', distanceRatio?: number) => {
+      const isHorizontal = direction === 'left' || direction === 'right'
+      const axis: ScrollAxis = isHorizontal ? 'horizontal' : 'vertical'
+      const currentOffset =
+        scrollTargetsRef.current[axis] ??
+        (isHorizontal ? container.scrollLeft : container.scrollTop)
+      const target = getNextScrollOffset({
         direction,
         currentOffset,
-        viewportHeight: container.clientHeight,
-        contentHeight: container.scrollHeight,
+        viewportSize: isHorizontal ? container.clientWidth : container.clientHeight,
+        contentSize: isHorizontal ? container.scrollWidth : container.scrollHeight,
         distanceRatio
       })
-      scrollTargetRef.current = target
+      scrollTargetsRef.current[axis] = target
       container.scrollTo({
-        top: target,
+        ...(isHorizontal ? { left: target } : { top: target }),
         behavior: getScrollBehavior({
           isStreaming: isStreamingRef.current,
           distanceRatio
         })
       })
-      scheduleProgrammaticTargetReset()
+      scheduleProgrammaticTargetReset(axis)
     }
 
     const resetOnManualScroll = () => {
@@ -148,6 +164,12 @@ export function AppContent() {
     window.api.onScrollPageDown((distanceRatio) => {
       scrollPage('down', distanceRatio)
     })
+    window.api.onScrollPageLeft((distanceRatio) => {
+      scrollPage('left', distanceRatio)
+    })
+    window.api.onScrollPageRight((distanceRatio) => {
+      scrollPage('right', distanceRatio)
+    })
     container.addEventListener('wheel', resetOnManualScroll, { passive: true })
     container.addEventListener('pointerdown', resetOnManualScroll)
     container.addEventListener('touchstart', resetOnManualScroll, { passive: true })
@@ -155,6 +177,8 @@ export function AppContent() {
     return () => {
       window.api.removeScrollPageUpListener()
       window.api.removeScrollPageDownListener()
+      window.api.removeScrollPageLeftListener()
+      window.api.removeScrollPageRightListener()
       container.removeEventListener('wheel', resetOnManualScroll)
       container.removeEventListener('pointerdown', resetOnManualScroll)
       container.removeEventListener('touchstart', resetOnManualScroll)

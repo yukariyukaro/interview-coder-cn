@@ -181,6 +181,36 @@ describe('shortcuts IPC sender protection', () => {
     expect(mocks.sendMobileScrollCommand).toHaveBeenCalledWith(direction, 0.75)
   })
 
+  it.each([
+    ['pageLeft', 'scroll-page-left'],
+    ['pageRight', 'scroll-page-right']
+  ] as const)('scrolls only the desktop for %s', (action, channel) => {
+    const triggerAction = mocks.handlers.get('triggerAction')
+    const mainWindow = createMainWindowMock()
+    global.mainWindow = mainWindow as never
+    mocks.isTrustedWindowSender.mockReturnValue(true)
+
+    expect(triggerAction!({ sender: {} }, action)).toBe(true)
+
+    expect(mainWindow.webContents.send).toHaveBeenCalledWith(channel, 0.75)
+    expect(mocks.sendMobileScrollCommand).not.toHaveBeenCalled()
+  })
+
+  it('passes continuous distance for repeated page-left shortcuts', () => {
+    const triggerAction = mocks.handlers.get('triggerAction')
+    const mainWindow = createMainWindowMock()
+    global.mainWindow = mainWindow as never
+    mocks.isTrustedWindowSender.mockReturnValue(true)
+    mocks.scrollInputController.next.mockReturnValueOnce(0.75).mockReturnValueOnce(0.1)
+
+    expect(triggerAction!({ sender: {} }, 'pageLeft')).toBe(true)
+    expect(triggerAction!({ sender: {} }, 'pageLeft')).toBe(true)
+
+    expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(1, 'scroll-page-left', 0.75)
+    expect(mainWindow.webContents.send).toHaveBeenNthCalledWith(2, 'scroll-page-left', 0.1)
+    expect(mocks.sendMobileScrollCommand).not.toHaveBeenCalled()
+  })
+
   it('passes continuous distance for repeated page-down shortcuts', () => {
     const triggerAction = mocks.handlers.get('triggerAction')
     const mainWindow = createMainWindowMock()

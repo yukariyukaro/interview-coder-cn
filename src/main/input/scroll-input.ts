@@ -1,8 +1,9 @@
 import {
   CONTINUOUS_SCROLL_DISTANCE_RATIO,
-  DEFAULT_SCROLL_DISTANCE_RATIO,
-  type ScrollDirection
+  DEFAULT_SCROLL_DISTANCE_RATIO
 } from '@interview-coder/sync-protocol'
+
+export type ScrollDirection = 'up' | 'down' | 'left' | 'right'
 
 const DEFAULT_REPEAT_WINDOW_MS = 700
 

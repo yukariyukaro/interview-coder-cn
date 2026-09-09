@@ -95,7 +95,7 @@ ipcMain.handle('selectScreenshotDir', async (event) => {
   if (!isMainWindowSender(event.sender)) return null
   const result = await dialog.showOpenDialog({
     properties: ['openDirectory', 'createDirectory'],
-    title: '选择截图保存目录'
+    title: '选择本地保存目录'
   })
   if (result.canceled || result.filePaths.length === 0) {
     return null
@@ -120,6 +120,7 @@ export const settings = {
   toolbarHoverDelay: 0,
   colorMode: 'dark' as ColorMode,
   screenshotAutoSave: false,
+  answerAutoSave: false,
   screenshotDir: '',
   dashscopeApiKey: '',
   hideDockIcon: false,
@@ -189,6 +190,7 @@ const settingValidators: Record<keyof AppSettings, (value: unknown) => boolean> 
   toolbarHoverDelay: (value) => typeof value === 'number' && [0, 500, 1000, 2000].includes(value),
   colorMode: (value) => value === 'light' || value === 'dark',
   screenshotAutoSave: (value) => typeof value === 'boolean',
+  answerAutoSave: (value) => typeof value === 'boolean',
   screenshotDir: (value) => typeof value === 'string',
   dashscopeApiKey: (value) => typeof value === 'string',
   hideDockIcon: (value) => typeof value === 'boolean',
