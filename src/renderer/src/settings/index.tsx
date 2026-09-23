@@ -25,6 +25,7 @@ import {
 import { isMac } from '@/lib/utils/env'
 import { SelectModel } from './SelectModel'
 import { CustomShortcuts, ResetDefaultShortcuts } from './CustomShortcuts'
+import { HookStatusBanner } from './HookStatusBanner'
 import {
   Select,
   SelectContent,
@@ -405,6 +406,7 @@ export default function SettingsPage() {
             </div>
             <ResetDefaultShortcuts />
           </h2>
+          <HookStatusBanner />
           <CustomShortcuts />
         </div>
 

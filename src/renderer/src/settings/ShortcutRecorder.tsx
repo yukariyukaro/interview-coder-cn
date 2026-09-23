@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { X } from 'lucide-react'
+import type { PrefixToken } from '@interview-coder/shortcut-tokens'
 import { Button } from '@/components/ui/button'
 import ShortcutRenderer from '@/components/ShortcutRenderer'
-import { getShortcutAccelerator, isModifierKey } from '@/lib/utils/keyboard'
+import { getPrefixTokenForCode, getShortcutAccelerator, isModifierKey } from '@/lib/utils/keyboard'
 
 type ShortcutRecorderProps = {
   value: string
@@ -11,33 +12,75 @@ type ShortcutRecorderProps = {
 
 export function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const [recording, setRecording] = useState(false)
+  const [recordingPrefix, setRecordingPrefix] = useState<PrefixToken | null>(null)
 
   useEffect(() => {
     if (!recording) return
 
+    const stopRecording = () => {
+      setRecording(false)
+      setRecordingPrefix(null)
+    }
+
     const handleKeyDown = (event: KeyboardEvent) => {
       event.preventDefault()
-      if (isModifierKey(event.code)) return
+      event.stopPropagation()
+
       if (event.code === 'Escape') {
-        setRecording(false)
+        // Escape cancels, unless it is part of a modifier combo being recorded
+        const composing = event.ctrlKey || event.altKey || event.shiftKey || event.metaKey
+        if (recordingPrefix || !composing) {
+          stopRecording()
+          return
+        }
+      }
+
+      // A right-side modifier becomes the sacrificial prefix; keep recording for the key
+      const prefix = getPrefixTokenForCode(event.code)
+      if (prefix) {
+        setRecordingPrefix(prefix)
         return
       }
 
-      const accelerator = getShortcutAccelerator(event)
+      if (isModifierKey(event.code)) return
+      const accelerator = getShortcutAccelerator(event, { recordingPrefix })
       if (!accelerator) return
       onChange(accelerator)
-      setRecording(false)
+      stopRecording()
     }
 
     window.addEventListener('keydown', handleKeyDown)
-    return () => window.removeEventListener('keydown', handleKeyDown)
-  }, [onChange, recording])
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [onChange, recording, recordingPrefix])
+
+  // The hook swallows the sacrificial right-side modifiers system-wide — this window
+  // included — so it has to stand down while we listen for one.
+  useEffect(() => {
+    if (!recording) return
+    void window.api.setHookSuspended(true)
+    return () => {
+      void window.api.setHookSuspended(false)
+    }
+  }, [recording])
 
   return (
     <div className="flex items-center gap-2">
-      <Button type="button" variant="outline" onClick={() => setRecording((value) => !value)}>
+      <Button
+        type="button"
+        variant="outline"
+        onClick={() => {
+          setRecordingPrefix(null)
+          setRecording((value) => !value)
+        }}
+      >
         {recording ? (
-          '请按下快捷键...'
+          recordingPrefix ? (
+            '已按下右侧修饰键，请再按一个主键...'
+          ) : (
+            '请按下快捷键...'
+          )
         ) : value ? (
           <ShortcutRenderer shortcut={value} />
         ) : (

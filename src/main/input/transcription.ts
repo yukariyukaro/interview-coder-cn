@@ -10,6 +10,9 @@ let isTranscribing = false
 let taskStarted = false
 let accumulatedText = ''
 let currentPartial = ''
+// Track the last finalized sentence id: the server may re-send or overlap
+// sentence results under fast speech, and heartbeat packets use sentence_id 0.
+let lastFinalSentenceId = 0
 
 function sendToRenderer(channel: string, ...args: unknown[]) {
   const mainWindow = global.mainWindow
@@ -29,6 +32,7 @@ function cleanup() {
   taskId = null
   isTranscribing = false
   taskStarted = false
+  lastFinalSentenceId = 0
 }
 
 function startTranscription(apiKey: string) {
@@ -53,7 +57,7 @@ function startTranscription(apiKey: string) {
         task_group: 'audio',
         task: 'asr',
         function: 'recognition',
-        model: 'fun-asr-realtime',
+        model: 'qwen3-asr-flash-realtime',
         parameters: {
           format: 'pcm',
           sample_rate: 16000
@@ -78,14 +82,25 @@ function startTranscription(apiKey: string) {
         const sentence = msg.payload?.output?.sentence
         if (!sentence) return
 
+        // Heartbeat packets (sentence_id 0) carry no useful text — skip them
+        // to avoid overlapping with the tail of the previous sentence.
+        if (sentence.heartbeat === true) return
+
         const text: string = sentence.text || ''
         const sentenceEnd: boolean = sentence.sentence_end === true
+        const sentenceId: number = sentence.sentence_id ?? 0
 
         if (sentenceEnd) {
-          if (text) {
-            accumulatedText += (accumulatedText ? '' : '') + text
+          // Only append when this sentence has never been finalized before,
+          // so a re-delivered final result cannot duplicate characters.
+          if (text && sentenceId > lastFinalSentenceId) {
+            accumulatedText += text
+            lastFinalSentenceId = sentenceId
           }
           currentPartial = ''
+        } else if (sentence.sentence_begin === true) {
+          // New sentence: drop any stale partial first.
+          currentPartial = text
         } else {
           currentPartial = text
         }
@@ -146,12 +161,12 @@ function stopTranscription() {
         input: {}
       }
     }
+    // Keep the connection open until task-finished arrives, so the tail
+    // result of the last sentence is flushed before teardown.
     ws.send(JSON.stringify(finishTask))
   }
 
   isTranscribing = false
-  cleanup()
-  sendToRenderer('transcription-stopped')
 }
 
 function handleAudioChunk(chunk: ArrayBuffer) {
@@ -166,6 +181,7 @@ export function getTranscriptionText(): string {
 export function clearTranscriptionText() {
   accumulatedText = ''
   currentPartial = ''
+  lastFinalSentenceId = 0
 }
 
 ipcMain.handle('start-transcription', (_event, apiKey: string) => {

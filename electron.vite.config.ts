@@ -5,7 +5,11 @@ import tailwindcss from '@tailwindcss/vite'
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin({ exclude: ['@interview-coder/sync-protocol'] })]
+    plugins: [
+      externalizeDepsPlugin({
+        exclude: ['@interview-coder/sync-protocol', '@interview-coder/shortcut-tokens']
+      })
+    ]
   },
   preload: {
     plugins: [externalizeDepsPlugin()]

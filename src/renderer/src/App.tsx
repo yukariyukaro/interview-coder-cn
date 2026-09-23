@@ -7,6 +7,7 @@ import HelpPage from '@/help'
 import { OverlayToolbar } from '@/coder/OverlayToolbar'
 import { useSettingsStore } from '@/lib/store/settings'
 import { useShortcutsStore } from '@/lib/store/shortcuts'
+import { useHookStatusStore } from '@/lib/store/hook'
 import { getCloneableFields } from '@/lib/utils'
 import { WindowResizeHandles } from '@/components/WindowResizeHandles'
 import { shouldBootstrapMainRenderer } from '@/renderer-bootstrap'
@@ -68,6 +69,17 @@ export default function App() {
 
   useEffect(() => {
     if (!isMainRenderer) return
+    window.api.onToggleColorMode(() => {
+      const { colorMode, updateSetting } = useSettingsStore.getState()
+      updateSetting('colorMode', colorMode === 'dark' ? 'light' : 'dark')
+    })
+    return () => {
+      window.api.removeToggleColorModeListener()
+    }
+  }, [isMainRenderer])
+
+  useEffect(() => {
+    if (!isMainRenderer) return
     window.api.onActiveSceneChanged((sceneId) => {
       setActiveScene(sceneId)
     })
@@ -75,6 +87,18 @@ export default function App() {
       window.api.removeActiveSceneChangedListener()
     }
   }, [isMainRenderer, setActiveScene])
+
+  useEffect(() => {
+    if (!isMainRenderer) return
+    const setStatus = useHookStatusStore.getState().setStatus
+    void window.api.getHookStatus().then((status) => {
+      if (status) setStatus(status)
+    })
+    window.api.onHookStatusChanged(setStatus)
+    return () => {
+      window.api.removeHookStatusChangedListener()
+    }
+  }, [isMainRenderer])
 
   useEffect(() => {
     if (!isMainRenderer || !initialized) return

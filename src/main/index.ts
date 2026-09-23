@@ -29,6 +29,7 @@ process.on('uncaughtException', (error) => {
 import { electronApp, optimizer } from '@electron-toolkit/utils'
 import './input/shortcuts'
 import './input/transcription'
+import { disposeHookRuntime, initHookRuntime } from './input/hook-runtime'
 import './windows/window-resize'
 import { createWindow } from './windows/main-window'
 import { initAutoUpdater } from './updater/auto-updater'
@@ -48,6 +49,11 @@ app.whenReady().then(() => {
   // flash for users who keep it hidden; if disabled, the renderer sync will
   // show it again once the window mounts.
   applyDockVisibility(true)
+
+  // Probe the optional native hook before any window exists; it is installed lazily
+  // once the renderer tells us the invisible mode is on (and degrades silently if
+  // the addon is missing).
+  initHookRuntime()
 
   // Auto-approve getDisplayMedia for system audio loopback capture
   session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
@@ -90,7 +96,15 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   // Unregister all shortcuts when there is no window left
   globalShortcut.unregisterAll()
+  disposeHookRuntime()
   if (process.platform !== 'darwin') {
     app.quit()
   }
+})
+
+// Covers quit paths that never go through window-all-closed (menu quit, app.quit()
+// from the updater, macOS Cmd+Q with the window still open).
+app.on('will-quit', () => {
+  globalShortcut.unregisterAll()
+  disposeHookRuntime()
 })

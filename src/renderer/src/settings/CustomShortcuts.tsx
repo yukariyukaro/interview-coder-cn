@@ -1,16 +1,27 @@
 import { useState, useEffect, useCallback, createContext, useContext } from 'react'
 import { toast } from 'sonner'
+import {
+  getEffectiveAccelerator,
+  hasModifierToken,
+  resolveShortcutChannel,
+  type PrefixToken,
+  type ShortcutChannel
+} from '@interview-coder/shortcut-tokens'
 import { Button } from '@/components/ui/button'
 import ShortcutRenderer from '@/components/ShortcutRenderer'
-import { isModifierKey, getShortcutAccelerator } from '@/lib/utils/keyboard'
-import { useShortcutsStore } from '@/lib/store/shortcuts'
+import { getPrefixTokenForCode, getShortcutAccelerator, isModifierKey } from '@/lib/utils/keyboard'
+import { isShortcutCustomized, useShortcutsStore } from '@/lib/store/shortcuts'
 import { useSettingsStore } from '@/lib/store/settings'
+import { useHookStatusStore } from '@/lib/store/hook'
+import { platform } from '@/lib/utils/env'
 
 const ShortcutsContext = createContext<{
   recordingAction: string | null
+  recordingPrefix: PrefixToken | null
   setRecordingAction: (action: string | null) => void
 }>({
   recordingAction: null,
+  recordingPrefix: null,
   setRecordingAction: () => {}
 })
 
@@ -18,6 +29,12 @@ export function CustomShortcuts() {
   const { shortcuts, updateShortcut } = useShortcutsStore()
   const { dashscopeApiKey } = useSettingsStore()
   const [recordingAction, setRecordingAction] = useState<string | null>(null)
+  const [recordingPrefix, setRecordingPrefix] = useState<PrefixToken | null>(null)
+
+  const stopRecording = useCallback(() => {
+    setRecordingAction(null)
+    setRecordingPrefix(null)
+  }, [])
 
   const onShortcutChange = useCallback(
     (action: string, key: string) => {
@@ -33,29 +50,53 @@ export function CustomShortcuts() {
       if (!recordingAction) return
 
       e.preventDefault()
+      e.stopPropagation()
+
+      if (e.code === 'Escape') {
+        // Escape cancels, unless it is part of a modifier combo being recorded
+        const composing = e.ctrlKey || e.altKey || e.shiftKey || e.metaKey
+        if (recordingPrefix || !composing) {
+          stopRecording()
+          return
+        }
+      }
+
+      // A right-side modifier becomes the sacrificial prefix; keep recording for the key
+      const prefix = getPrefixTokenForCode(e.code)
+      if (prefix) {
+        setRecordingPrefix(prefix)
+        return
+      }
 
       if (isModifierKey(e.code)) return
-      const accelerator = getShortcutAccelerator(e)
-      // User press escape to cancel recording.
-      if (e.code === 'Escape' && !accelerator) {
-        setRecordingAction(null)
-      }
+      const accelerator = getShortcutAccelerator(e, { recordingPrefix })
       if (!accelerator) return
       onShortcutChange(recordingAction, accelerator)
-      setRecordingAction(null)
+      stopRecording()
     },
-    [recordingAction, onShortcutChange]
+    [recordingAction, recordingPrefix, onShortcutChange, stopRecording]
   )
 
   useEffect(() => {
+    if (!recordingAction) return
     window.addEventListener('keydown', handleKeyDown)
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
     }
-  }, [handleKeyDown])
+  }, [recordingAction, handleKeyDown])
+
+  // The hook swallows the sacrificial right-side modifiers system-wide — this window
+  // included — so it has to stand down while we listen for one.
+  useEffect(() => {
+    if (!recordingAction) return
+    void window.api.setHookSuspended(true)
+    return () => {
+      void window.api.setHookSuspended(false)
+    }
+  }, [recordingAction])
 
   return (
-    <ShortcutsContext.Provider value={{ recordingAction, setRecordingAction }}>
+    <ShortcutsContext.Provider value={{ recordingAction, recordingPrefix, setRecordingAction }}>
       <div className="space-y-4">
         {/* Window Management */}
         <div className="space-y-2">
@@ -80,6 +121,11 @@ export function CustomShortcuts() {
             label="提高透明度"
             description="每次调整 5%，窗口更透明"
             shortcut="decreaseOpacity"
+          />
+          <Shortcut
+            label="切换日间/夜间模式"
+            description="在日间与夜间显示模式之间切换"
+            shortcut="toggleColorMode"
           />
         </div>
 
@@ -132,6 +178,27 @@ export function CustomShortcuts() {
   )
 }
 
+/** Explains which channel the binding currently runs through */
+function ChannelBadge({ channel, accelerator }: { channel: ShortcutChannel; accelerator: string }) {
+  if (channel === 'hook') {
+    return <Badge className="bg-emerald-100 text-emerald-700">无痕</Badge>
+  }
+  if (channel === 'unsupported') {
+    return <Badge className="bg-red-100 text-red-700">不可用，请改键</Badge>
+  }
+  return hasModifierToken(accelerator) ? (
+    <Badge className="bg-amber-100 text-amber-700">会泄漏修饰键</Badge>
+  ) : null
+}
+
+function Badge({ children, className }: { children: React.ReactNode; className?: string }) {
+  return (
+    <span className={`rounded px-1.5 py-0.5 text-xs whitespace-nowrap ${className ?? ''}`}>
+      {children}
+    </span>
+  )
+}
+
 function Shortcut({
   label,
   description,
@@ -144,9 +211,14 @@ function Shortcut({
   disabled?: boolean
 }) {
   const { shortcuts } = useShortcutsStore()
-  const { recordingAction, setRecordingAction } = useContext(ShortcutsContext)
+  const { recordingAction, recordingPrefix, setRecordingAction } = useContext(ShortcutsContext)
+  const hookAvailable = useHookStatusStore((state) => state.available)
   const shortcut = shortcuts[shortcutAction]
   const isRecording = recordingAction === shortcutAction
+  const channel = shortcut
+    ? resolveShortcutChannel(shortcut.key, hookAvailable, platform)
+    : ('system' as ShortcutChannel)
+  const accelerator = shortcut ? getEffectiveAccelerator(shortcut.key, channel, platform) : ''
 
   return shortcut ? (
     <div
@@ -156,18 +228,21 @@ function Shortcut({
         <label className="text-sm font-medium">{label}</label>
         {description && <p className="text-xs font-light">{description}</p>}
       </div>
-      <span
-        className="cursor-pointer"
-        onClick={() => setRecordingAction(isRecording ? null : shortcutAction)}
-      >
-        {!isRecording ? (
-          <ShortcutRenderer shortcut={shortcut.key} />
-        ) : (
-          <span className="font-mono text-sm align-middle rounded-md pl-2 pr-1 py-1 transition-colors bg-gray-200 animate-pulse">
-            请按下自定义快捷键...
-          </span>
-        )}
-      </span>
+      <div className="flex items-center gap-2">
+        {!isRecording && <ChannelBadge channel={channel} accelerator={accelerator} />}
+        <span
+          className="cursor-pointer"
+          onClick={() => setRecordingAction(isRecording ? null : shortcutAction)}
+        >
+          {!isRecording ? (
+            <ShortcutRenderer shortcut={accelerator} />
+          ) : (
+            <span className="font-mono text-sm align-middle rounded-md pl-2 pr-1 py-1 transition-colors bg-gray-200 animate-pulse">
+              {recordingPrefix ? '已按下右侧修饰键，请再按一个主键...' : '请按下自定义快捷键...'}
+            </span>
+          )}
+        </span>
+      </div>
     </div>
   ) : null
 }
@@ -182,11 +257,8 @@ export function ResetDefaultShortcuts() {
       onClick={async () => {
         await window.api.updateShortcuts(
           Object.values(shortcuts)
-            .filter(({ key, defaultKey }) => key !== defaultKey)
-            .map((shortcut) => ({
-              ...shortcut,
-              key: shortcut.defaultKey
-            }))
+            .filter(isShortcutCustomized)
+            .map((shortcut) => ({ ...shortcut, key: shortcut.defaultKey }))
         )
         resetShortcuts()
         toast.success('重置默认快捷键成功')

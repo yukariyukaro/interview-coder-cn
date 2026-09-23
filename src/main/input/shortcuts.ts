@@ -1,6 +1,11 @@
 import { globalShortcut, ipcMain } from 'electron'
 import type { BrowserWindow } from 'electron'
 import {
+  isHookAccelerator,
+  toFallbackAccelerator,
+  type Platform
+} from '@interview-coder/shortcut-tokens'
+import {
   concealMainWindow,
   isMainWindowSoftHidden,
   isSilentModeEnabled,
@@ -20,21 +25,39 @@ import { isMainWindowSender, isTrustedWindowSender } from '../core/ipc-sender'
 import { sendMobileScrollCommand } from '../sync/mobile-sync'
 import { createScrollInputController } from './scroll-input'
 import {
+  configureHookRuntime,
+  getHookStatus,
+  isHookUsable,
+  refreshHookBindings,
+  setHookSuspended,
+  type HookBindingPlan
+} from './hook-runtime'
+import {
   appendScreenshot,
   sendFollowUpQuestion,
   stopSolutionStream,
   takeNewScreenshot
 } from '../solution/solution-controller'
 
+type ShortcutChannel = 'hook' | 'system' | 'unsupported'
+
 type Shortcut = {
   action: string
+  /** The accelerator as configured; a right-side modifier token makes it invisible */
   key: string
+  channel: ShortcutChannel
   status: ShortcutStatus
   registeredKeys: string[]
 }
 
 enum ShortcutStatus {
   Registered = 'registered',
+  /** Handled by the native hook: the focused window never sees the keys */
+  HookActive = 'hook-active',
+  /** Hook unavailable, fell back to globalShortcut (may leak modifier keys) */
+  Degraded = 'degraded',
+  /** Neither the hook nor globalShortcut can express this binding */
+  Unsupported = 'unsupported',
   Failed = 'failed',
   /** Shortcut is available to register but not registered. */
   Available = 'available'
@@ -44,6 +67,8 @@ const MOVE_STEP = 200
 /** Opacity delta per shortcut press, matching the settings slider step */
 const OPACITY_STEP = 0.05
 const shortcuts: Record<string, Shortcut> = {}
+
+const platform: Platform = process.platform === 'darwin' ? 'darwin' : 'win32'
 
 const FRONT_REASSERT_DURATION = 8000
 const FRONT_REASSERT_INTERVAL = 100
@@ -245,6 +270,16 @@ const callbacks: Record<string, () => void> = {
     adjustOpacity(-OPACITY_STEP)
   },
 
+  /**
+   * Color mode is owned by the renderer settings store (persisted + synced back to
+   * main, which then pushes it to the toolbar window), so only ask it to flip.
+   */
+  toggleColorMode: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed()) return
+    mainWindow.webContents.send('toggle-color-mode')
+  },
+
   pageUp: () => {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
@@ -336,19 +371,89 @@ const clickableActions = new Set([
   'clearTranscription'
 ])
 
-function unregisterShortcut(action: string) {
-  const shortcut = shortcuts[action]
-  if (!shortcut) return
-  if (shortcut.registeredKeys.length) {
-    shortcut.registeredKeys.forEach((registeredKey) => {
-      globalShortcut.unregister(registeredKey)
-    })
-  } else {
-    globalShortcut.unregister(shortcut.key)
-  }
-  shortcut.status = ShortcutStatus.Available
+function unregisterRegisteredKeys(shortcut: Shortcut) {
+  shortcut.registeredKeys.forEach((registeredKey) => {
+    globalShortcut.unregister(registeredKey)
+  })
   shortcut.registeredKeys = []
 }
+
+/** Store the config for one action; actions without a callback are ignored */
+function setShortcutConfig(action: string, key: string) {
+  if (!getShortcutCallback(action)) return
+  const existing = shortcuts[action]
+  if (existing) unregisterRegisteredKeys(existing)
+  shortcuts[action] = {
+    action,
+    key,
+    channel: existing?.channel ?? 'system',
+    status: ShortcutStatus.Available,
+    registeredKeys: []
+  }
+}
+
+function removeShortcut(action: string) {
+  const shortcut = shortcuts[action]
+  if (!shortcut) return
+  unregisterRegisteredKeys(shortcut)
+  delete shortcuts[action]
+}
+
+/**
+ * Register one action on whichever channel is currently active.
+ *
+ * Using a right-side modifier token is what routes a binding through the hook; there
+ * is no separate switch. When the hook is unavailable (or the standard build is used
+ * without the native addon) the accelerator degrades to the equivalent left-side
+ * modifier, which is exactly the binding the app shipped before.
+ */
+function applyShortcut(action: string, plan: HookBindingPlan) {
+  const shortcut = shortcuts[action]
+  if (!shortcut) return
+
+  unregisterRegisteredKeys(shortcut)
+
+  if (isHookUsable() && isHookAccelerator(shortcut.key)) {
+    shortcut.channel = 'hook'
+    shortcut.status = plan.unsupported.has(action)
+      ? ShortcutStatus.Unsupported
+      : ShortcutStatus.HookActive
+    return
+  }
+
+  const systemKey = toFallbackAccelerator(shortcut.key, platform)
+  if (!systemKey) {
+    shortcut.channel = 'unsupported'
+    shortcut.status = ShortcutStatus.Unsupported
+    return
+  }
+
+  shortcut.channel = 'system'
+  const callback = getShortcutCallback(action)
+  if (!callback) return
+  const registeredKeys: string[] = []
+  getShortcutRegistrationKeys(systemKey).forEach((candidate) => {
+    if (globalShortcut.register(candidate, callback)) registeredKeys.push(candidate)
+  })
+  shortcut.registeredKeys = registeredKeys
+  shortcut.status = registeredKeys.length
+    ? isHookAccelerator(shortcut.key)
+      ? ShortcutStatus.Degraded
+      : ShortcutStatus.Registered
+    : ShortcutStatus.Failed
+}
+
+/** Re-register everything: used after bulk changes and after a channel switch */
+function reapplyAllShortcuts() {
+  const plan = refreshHookBindings()
+  Object.keys(shortcuts).forEach((action) => applyShortcut(action, plan))
+}
+
+configureHookRuntime({
+  dispatch: (action) => getShortcutCallback(action)?.(),
+  getBindings: () => Object.values(shortcuts).map(({ action, key }) => ({ action, key })),
+  onChannelChanged: reapplyAllShortcuts
+})
 
 function getShortcutRegistrationKeys(key: string) {
   const keys = [key]
@@ -394,29 +499,6 @@ function getShortcutCallback(action: string): (() => void) | undefined {
   }
 }
 
-function registerShortcut(action: string, key: string) {
-  if (shortcuts[action]) {
-    unregisterShortcut(action)
-  }
-
-  const callback = getShortcutCallback(action)
-  if (!callback) return
-  const keysToRegister = getShortcutRegistrationKeys(key)
-  const registeredKeys: string[] = []
-  keysToRegister.forEach((shortcutKey) => {
-    if (globalShortcut.register(shortcutKey, callback)) {
-      registeredKeys.push(shortcutKey)
-    }
-  })
-
-  shortcuts[action] = {
-    action,
-    key,
-    status: registeredKeys.length ? ShortcutStatus.Registered : ShortcutStatus.Failed,
-    registeredKeys
-  }
-}
-
 ipcMain.handle('getShortcuts', (event) => {
   if (!isMainWindowSender(event.sender)) return false
   return shortcuts
@@ -429,29 +511,44 @@ ipcMain.handle(
     const nextActions = new Set(Object.keys(nextShortcuts))
     for (const action of Object.keys(shortcuts)) {
       if (nextActions.has(action)) continue
-      unregisterShortcut(action)
-      delete shortcuts[action]
+      removeShortcut(action)
     }
     Object.entries(nextShortcuts).forEach(([action, { key }]) => {
-      registerShortcut(action, key)
+      setShortcutConfig(action, key)
     })
+    reapplyAllShortcuts()
     return true
   }
 )
 
-ipcMain.handle('updateShortcuts', (event, _shortcuts: { action: string; key: string }[]) => {
+ipcMain.handle('updateShortcuts', (event, updated: Array<{ action: string; key: string }>) => {
   if (!isMainWindowSender(event.sender)) return false
-  _shortcuts.forEach((shortcut) => {
-    if (shortcuts[shortcut.action]?.key !== shortcut.key) {
-      registerShortcut(shortcut.action, shortcut.key)
-    }
+  updated.forEach(({ action, key }) => {
+    if (shortcuts[action]?.key === key) return
+    setShortcutConfig(action, key)
   })
+  reapplyAllShortcuts()
   return true
 })
 
 ipcMain.handle('stopSolutionStream', (event) => {
   if (!isMainWindowSender(event.sender)) return false
   return stopSolutionStream()
+})
+
+ipcMain.handle('getHookStatus', (event) => {
+  if (!isMainWindowSender(event.sender)) return null
+  return getHookStatus()
+})
+
+/**
+ * The shortcut recorder has to see the right-side modifiers the hook normally
+ * swallows, so it asks for the hook to stand down while it is listening.
+ */
+ipcMain.handle('setHookSuspended', (event, suspended: boolean) => {
+  if (!isMainWindowSender(event.sender)) return false
+  setHookSuspended(suspended === true)
+  return true
 })
 
 ipcMain.handle('triggerAction', (event, action: string) => {

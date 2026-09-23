@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
 import type { AppSettings } from '../main/core/settings'
 import type { AppState } from '../main/core/state'
+import type { HookStatus } from '../main/input/hook-runtime'
 
 // Custom APIs for renderer
 const api = {
@@ -22,6 +23,15 @@ const api = {
   },
   removeSilentModeChangedListener: () => {
     ipcRenderer.removeAllListeners('silent-mode-changed')
+  },
+  // Listen for day/night mode toggles triggered by shortcuts
+  onToggleColorMode: (callback: () => void) => {
+    ipcRenderer.on('toggle-color-mode', () => {
+      callback()
+    })
+  },
+  removeToggleColorModeListener: () => {
+    ipcRenderer.removeAllListeners('toggle-color-mode')
   },
   onActiveSceneChanged: (callback: (sceneId: string) => void) => {
     ipcRenderer.on('active-scene-changed', (_event, sceneId) => {
@@ -58,6 +68,21 @@ const api = {
   // Update shortcuts
   updateShortcuts: (shortcuts: { action: string; key: string }[]) =>
     ipcRenderer.invoke('updateShortcuts', shortcuts),
+
+  // Invisible-shortcut status: whether right-modifier bindings are swallowed
+  getHookStatus: () => ipcRenderer.invoke('getHookStatus') as Promise<HookStatus | null>,
+  onHookStatusChanged: (callback: (status: HookStatus) => void) => {
+    ipcRenderer.on('hook-status-changed', (_event, status) => {
+      if (status) callback(status)
+    })
+  },
+  removeHookStatusChangedListener: () => {
+    ipcRenderer.removeAllListeners('hook-status-changed')
+  },
+  // Stand the hook down while the shortcut recorder is listening for a right-side
+  // modifier, otherwise the recorder never sees the key the hook swallows
+  setHookSuspended: (suspended: boolean) =>
+    ipcRenderer.invoke('setHookSuspended', suspended) as Promise<boolean>,
 
   // Trigger the small set of user-facing actions exposed by the overlay toolbar.
   triggerAction: (

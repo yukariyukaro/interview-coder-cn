@@ -35,6 +35,10 @@ src/
 │   ├── index.d.ts           # global.mainWindow type declaration
 │   ├── core/                # Shared settings, runtime state, IPC sender validation
 │   ├── input/               # Global shortcuts, scroll input, speech transcription
+│   │   ├── shortcuts.ts     # Registers bindings on the system or hook channel
+│   │   ├── hook-runtime.ts  # Invisible-shortcut runtime (install/health/degrade/status)
+│   │   ├── native-addon.ts  # Loads the optional native hook addon from resources/native
+│   │   └── native-addon.d.ts# Contract of that addon
 │   ├── solution/            # AI client, screenshot pipeline, solution session/events
 │   ├── sync/                # Desktop mobile-sync client and network URL resolution
 │   ├── updater/             # electron-updater integration
@@ -58,6 +62,7 @@ src/
         ├── settings/         # Settings page
         │   ├── index.tsx     # AI config, coding, appearance, shortcuts, privacy
         │   ├── SelectModel.tsx     # Combobox with custom model input
+        │   ├── HookStatusBanner.tsx # Visible/degraded state of the invisible shortcuts
         │   └── CustomShortcuts.tsx # Shortcut key recorder
         ├── help/             # Help page
         │   ├── index.tsx     # Quick start guide, shortcuts, toolbar, FAQ
@@ -74,18 +79,25 @@ src/
         │   ├── store/        # Zustand stores
         │   │   ├── app.ts       # ignoreMouse state, synced from main process
         │   │   ├── settings.ts  # API config, model, prompt scenes, opacity, toolbar (persisted v8)
-        │   │   ├── shortcuts.ts # Shortcut bindings (persisted v5, with migration)
+        │   │   ├── shortcuts.ts # Shortcut bindings (persisted v9, with migration)
+        │   │   ├── hook.ts      # Invisible-shortcut status mirrored from main (not persisted)
         │   │   ├── solution.ts  # Loading state, solution chunks, screenshots, errors
         │   │   └── transcription.ts # Transcription state: isTranscribing, text, error
         │   ├── toolbar-actions.ts # Toolbar button list (action + icon + label), shared with help
         │   ├── utils/
         │   │   ├── index.ts     # cn() helper, getCloneableFields()
-        │   │   ├── env.ts       # isMac, platformAlt
+        │   │   ├── env.ts       # isMac, platformAlt, platform
         │   │   └── keyboard.ts  # Accelerator string conversion
         │   └── audio-capture.ts # System audio capture via getDisplayMedia for transcription
         └── assets/
             ├── base.css      # Tailwind @import, CSS variables, app layout styles
             └── main.css      # Tailwind + typography plugin + theme variables (oklch)
+
+native/input-hook/           # Optional native addon behind the invisible shortcuts
+├── binding.gyp              # node-gyp target (win32 / darwin only)
+└── src/                     # state.h + hook_win.cc (WH_KEYBOARD_LL) / hook_mac.mm (CGEventTap)
+
+packages/shortcut-tokens/    # Shared vocabulary for the sacrificial right-side modifiers
 ```
 
 ## Architecture
@@ -139,6 +151,8 @@ src/
 - `getAppSettings` / `updateAppSettings` — settings CRUD
 - `updateAppState` — sync `inCoderPage`, `ignoreMouse`
 - `initShortcuts` / `getShortcuts` / `updateShortcuts` — shortcut management
+- `getHookStatus` — whether right-modifier bindings are currently swallowed by the native hook
+- `setHookSuspended` — stand the hook down while the shortcut recorder listens for a right-side modifier
 - `stopSolutionStream` — abort current AI stream
 - `sendFollowUpQuestion` — follow-up within conversation
 - `triggerAction` / `setToolbarVisible` — overlay toolbar: run a shortcut action, toggle the window
@@ -154,6 +168,7 @@ src/
 - `scroll-page-up` / `scroll-page-down` — keyboard-driven scroll
 - `toggle-transcription` — trigger start/stop transcription from shortcut
 - `sync-toolbar-settings` — push toolbar-only settings (hover dwell) into the toolbar window
+- `hook-status-changed` — the invisible-shortcut channel changed (installed, degraded, re-installed)
 - `transcription-text` / `transcription-error` / `transcription-stopped` / `transcription-cleared` — transcription events
 
 ### Zustand Stores
@@ -161,7 +176,8 @@ src/
 | Store | File | Persisted | Key State |
 |-------|------|-----------|-----------|
 | `useSettingsStore` | `lib/store/settings.ts` | Yes (v10) | `apiBaseURL`, `apiKey`, `model`, `customModels`, `scenes` (prompt scenes), `activeSceneId`, `customPrompt` (derived from active scene), `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `screenshotDisplay`, `screenshotAutoSave`, `answerAutoSave`, `screenshotDir`, `dashscopeApiKey` |
-| `useShortcutsStore` | `lib/store/shortcuts.ts` | Yes (v7) | `shortcuts` (action → key mapping with categories) |
+| `useShortcutsStore` | `lib/store/shortcuts.ts` | Yes (v9) | `shortcuts` (action → key mapping with categories; a right-side modifier token marks a binding as invisible-capable) |
+| `useHookStatusStore` | `lib/store/hook.ts` | No | `available`, `reason`, `hookedCount` mirrored from main |
 | `useSolutionStore` | `lib/store/solution.ts` | No | `isLoading`, `solutionChunks`, `screenshotData`, `errorMessage` |
 | `useTranscriptionStore` | `lib/store/transcription.ts` | No | `isTranscribing`, `transcriptionText`, `errorMessage` |
 | `useAppStore` | `lib/store/app.ts` | No | `ignoreMouse` |
@@ -229,11 +245,32 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 
 ### Shortcut System
 
-- Global shortcuts registered via Electron's `globalShortcut` API
-- Renderer stores shortcut config in Zustand (persisted); sends to main on init
-- On Windows, `Alt`-based shortcuts also register `Ctrl+Alt` variant for compatibility
-- Shortcut actions are string-keyed callbacks in `src/main/input/shortcuts.ts`
-- Default shortcuts use `platformAlt` (`Alt` on macOS, `CommandOrControl` on Windows)
+- Two channels, decided per binding by its accelerator string:
+  - **hook** — any binding containing a sacrificial right-side modifier (`RightControl`, `RightAlt`, `RightShift`, and `RightCommand` on macOS). Registered through the native hook, which swallows the whole key sequence, so the focused window (and any page JS in it) never sees a keydown/keyup — not even an orphan modifier press.
+  - **system** — everything else, registered via Electron's `globalShortcut` as before. An orphan modifier press does reach the focused window here; that is the pre-existing behaviour, not a regression.
+- **Using one of those tokens is what enables the hook** — there is no separate "invisible mode" switch.
+- The hook is installed lazily (only while at least one binding needs it) and torn down when none does.
+- Degrading is key-for-key identical: `toFallbackAccelerator(defaultKey)` maps e.g. `RightControl+H` back to `CommandOrControl+H`. `src/renderer/src/lib/store/shortcuts.test.ts` asserts this invariant for every default on both platforms.
+- Renderer stores shortcut config in Zustand (persisted, v9); sends to main on init. The v7→v8 migration upgrades untouched defaults to the right-side modifiers and leaves customised bindings alone; v8→v9 folds the short-lived `hookKey` field back into `key`. Bump `version` whenever the shape changes — a mismatch there leaves the hook silently unused.
+- On Windows, `Alt`-based *system* shortcuts also register a `Ctrl+Alt` variant for compatibility.
+- Shortcut actions are string-keyed callbacks in `src/main/input/shortcuts.ts`; hook triggers dispatch through the very same callbacks, so the `state.inCoderPage` guards are unchanged.
+- Default shortcuts use `platformAlt` for their fallback meaning only; the stored values are the sacrificial right-side forms.
+
+### Invisible Shortcuts (native hook)
+
+- Vocabulary lives in `packages/shortcut-tokens` (shared by both processes — a drift there would silently fall back to the leaking channel).
+- `src/main/input/hook-runtime.ts` compiles accelerators into keycodes, installs the addon, watches its health and reports status; `src/main/input/shortcuts.ts` only decides which channel each binding uses.
+- The native addon (`native/input-hook`, node-gyp, N-API) is **optional**:
+  - Built by `npm run build:native`, which is prepended to `build:win` / `build:mac`, writes `resources/native/input-hook-<platform>-<arch>.node`, and **exits 0 with a warning when the C++ toolchain is missing** so `npm ci` and `npm run dev` never depend on it.
+  - Built with N-API, so no `electron-rebuild` step is needed and `npmRebuild: false` in `electron-builder.yml` stays correct.
+  - Windows needs the "Desktop development with C++" workload, and the SDK must be **registered on the VS instance** — node-gyp reads the instance's package list, so an SDK that merely exists on disk still reports `missing any Windows SDK`. macOS needs Xcode Command Line Tools plus the Accessibility / Input Monitoring grant.
+  - `node-gyp` is an explicit devDependency on v11+: the bundled gyp of v9 imports `distutils`, which Python 3.12 removed.
+- The state machine lives in C++ (`native/input-hook/src/state.h`) because a macOS `CGEventTap` must decide synchronously on the tap thread, where calling back into JS is not allowed. Rule: a prefix is always swallowed, and while any prefix is held every key is swallowed; a modifier that was pressed *before* the prefix keeps leaking (its keydown already reached the window) and its keyup leaks too, so no orphan keyup is created.
+- Because a prefix is swallowed system-wide, our own shortcut recorder would never see it. `setHookSuspended(true)` therefore uninstalls the hook for as long as the recorder is listening, and `refreshHookBindings()` refuses to bring it back up meanwhile.
+- Health:
+  - Windows silently removes a low-level hook that keeps timing out, so `hook-runtime` compares "ms since the system last saw input" with "ms since the hook last saw a key" and reinstalls on a gap.
+  - macOS re-enables the tap in place when it receives `kCGEventTapDisabledByTimeout` / `ByUserInput`.
+- The hook cannot filter by device: a swallowed key never produces a Raw Input packet, and a low-level hook carries no device handle. Triggers are therefore chosen to be unambiguous (a right-side sacrificial modifier), not device-specific.
 
 ### UI Component Patterns
 
@@ -252,6 +289,7 @@ npm run dev          # Start in dev mode (electron-vite dev)
 npm run build        # Typecheck + build (electron-vite build)
 npm run build:mac    # Build macOS distributable
 npm run build:win    # Build Windows distributable
+npm run build:native # Compile the optional native hook addon (skips with a warning if unavailable)
 npm run typecheck    # Run TypeScript type checking (node + web)
 npm run lint         # Run ESLint
 npm run format       # Run Prettier
@@ -302,3 +340,45 @@ These are read by dotenv in the main process and merged with renderer-side setti
 9. **macOS and Windows only**: Linux is not a supported or built target.
 
 10. **Prompt files are Prettier-ignored**: `src/renderer/src/lib/store/prompts/` is listed in `.prettierignore` — Prettier rewrites the literal ``` fences inside those prompts, which changes what the model is told.
+
+---
+
+## Mobile App（Expo）Windows 本地开发笔记
+
+> 本节补充 `apps/mobile`（Expo / React Native 开发版）在 **Windows 本地**启动与真机调试的踩坑记录，适用于含桌面端 + 移动端 workspace 的分支。
+
+### 依赖与启动
+
+- 仓库使用 **npm workspaces**（根 `package.json` 的 `workspaces: ["apps/*","packages/*"]`，`devEngines.packageManager = npm`）。**不要用 pnpm 安装**：`@interview-coder/sync-protocol` 等内部包只存在于本地 workspace，pnpm 会尝试从 registry 拉取而报 `ERR_PNPM_FETCH_404`。
+- 安装依赖：在仓库根执行 `npm install`（workspace 依赖一并安装）。
+- 启动顺序：
+  1. 移动端同步中继：`npm run dev:sync`（监听 8787）
+  2. 桌面端：`npm run dev`
+  3. Mobile Metro：`npm run start -w @interview-coder/mobile`（等价于在 `apps/mobile` 下 `node scripts/start-dev-server.mjs --dev-client`）
+
+### Metro 在 monorepo 下的入口 URL（重要，容易误判为 bug）
+
+- `expo/metro-config` 会把 Metro 的 **serverRoot 自动提升到 workspace 根**（`interview-coder-cn/`），而 projectRoot 仍是 `apps/mobile`。这是 expo 的**正常设计**（为了让 monorepo 内共享源码的 URL 稳定），不是配置错误，在 macOS 上行为一致。
+- 因此 bundle 入口 URL **不是** `/index.bundle`，而是相对 serverRoot 的路径：
+  `http://<host>:8081/apps/mobile/index.ts.bundle?platform=android&dev=true&...`
+- 想拿到真实 URL：`curl -H "expo-platform: android" http://127.0.0.1:8081/` 取 manifest 的 `launchAsset.url`。
+- 用 `/index.bundle` 这类错误入口请求会得到 `Unable to resolve module ./index from D:\...\interview-coder-cn/...`，属于**入口 URL 用错**而非工程损坏。
+
+### Windows 终端跑 expo 的怪癖
+
+- 本环境直接跑 `expo.cmd start` / `npm run start -w ...` 时，expo CLI 主进程可能以 **exit code 0 提前退出**，但 **Metro 子进程仍持续监听 8081**。判断 Metro 是否可用以端口监听 / `GET http://127.0.0.1:8081/status`（返回 `packager-status:running`）为准，不要只看命令退出码。
+- 需要命令保持前台运行以便看日志时，用 node 直跑 CLI 的 JS 入口（cwd 必须是 `apps/mobile`）：
+  `node node_modules/expo/node_modules/@expo/cli/build/bin/cli start --dev-client`
+
+### Android 真机白屏排查 Checklist
+
+白屏 = Development Build 未拿到 JS bundle，按序排查：
+
+1. Metro 是否存活：`http://127.0.0.1:8081/status`。
+2. 手机浏览器访问 `http://<电脑局域网IP>:8081/status`（如 `192.168.31.92`）。打不开 → 检查：手机与电脑是否同一 WiFi 网段、路由器是否开启 AP 隔离、Windows 防火墙是否放行 TCP 8081。
+3. Windows 防火墙放行（需管理员）：
+   `netsh advfirewall firewall add rule name="expo-metro-8081" dir=in action=allow protocol=TCP localport=8081`
+4. 电脑局域网 IP 以 `ipconfig` 的 WLAN 网卡为准；不要信 expo 打印的连接地址，它可能选中 VMware 等虚拟网卡的 169.254.x.x 地址导致真机不可达。
+5. Dev Launcher 中输入 `http://<电脑IP>:8081` 即可（服务端按请求 Host 生成 bundle URL）。若进入 Dev Launcher 界面本身白屏，把 App 从后台任务完全划掉重开。
+6. 首次加载会编译整个 bundle（1~3 分钟、约 8MB+），耐心等待；也可用 `curl` 对 bundle URL 预热缓存。
+7. 真机需访问同步中继（8787）时必须走 USB + `adb reverse tcp:8787 tcp:8787`（同理 8081 也可 reverse）。注意：手机 USB 模式要选「文件传输 / MTP」，否则 adb 枚举不到设备。

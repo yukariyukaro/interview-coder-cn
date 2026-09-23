@@ -1,3 +1,5 @@
+import { splitAccelerator, type PrefixToken } from '@interview-coder/shortcut-tokens'
+
 import { isMac } from './env'
 
 const supportedPhysicalKeys = [
@@ -89,15 +91,57 @@ const modifierKeys = [
   'MetaRight'
 ]
 
+/**
+ * Right-side modifiers double as the sacrificial hook prefixes. `MetaRight` (right
+ * Command) only exists on macOS; on Windows the Meta key is the Windows key, which
+ * is not a reasonable sacrifice.
+ */
+const PREFIX_CODES: Record<string, PrefixToken> = isMac
+  ? {
+      ControlRight: 'RightControl',
+      AltRight: 'RightAlt',
+      MetaRight: 'RightCommand',
+      ShiftRight: 'RightShift'
+    }
+  : {
+      ControlRight: 'RightControl',
+      AltRight: 'RightAlt',
+      ShiftRight: 'RightShift'
+    }
+
+/** Which DOM modifier flag a sacrificed prefix turns on while it is held down */
+const PREFIX_MODIFIER_FLAG: Record<PrefixToken, 'ctrl' | 'alt' | 'shift' | 'meta'> = {
+  RightControl: 'ctrl',
+  RightAlt: 'alt',
+  RightCommand: 'meta',
+  RightShift: 'shift'
+}
+
+export type ShortcutRecordingOptions = {
+  /** A sacrificial prefix the recorder already captured from a right-side modifier */
+  recordingPrefix?: PrefixToken | null
+}
+
 export function isModifierKey(code: string) {
   return modifierKeys.includes(code)
 }
 
-export function getShortcutAccelerator(event: KeyboardEvent) {
+/** The sacrificial prefix produced by a right-side modifier, if any */
+export function getPrefixTokenForCode(code: string): PrefixToken | null {
+  return PREFIX_CODES[code] ?? null
+}
+
+export function getShortcutAccelerator(
+  event: KeyboardEvent,
+  options: ShortcutRecordingOptions = {}
+) {
   const keyCode = event.code
   if (isModifierKey(keyCode) || !supportedPhysicalKeys.includes(keyCode as SupportPhysicalKey)) {
     return null
   }
+
+  const prefix = options.recordingPrefix ?? null
+  const prefixFlag = prefix ? PREFIX_MODIFIER_FLAG[prefix] : null
 
   const modifiers: string[] = []
   // AltRight on Windows reports AltGraph and toggles ctrlKey, so treat it as plain Alt
@@ -106,11 +150,14 @@ export function getShortcutAccelerator(event: KeyboardEvent) {
   const isCtrlActive = event.ctrlKey && !isAltGraph
   const isAltActive = event.altKey || isAltGraph
 
-  if (isCtrlActive) modifiers.push(isMac ? 'Control' : 'CommandOrControl')
-  if (isAltActive) modifiers.push('Alt')
-  if (event.shiftKey) modifiers.push('Shift')
-  if (event.metaKey) modifiers.push(isMac ? 'CommandOrControl' : 'Meta')
-  if (modifiers.length === 0) return null
+  // The prefix key itself also sets its own modifier flag; it is already part of the
+  // accelerator, so it must not be added a second time
+  if (isCtrlActive && prefixFlag !== 'ctrl') modifiers.push(isMac ? 'Control' : 'CommandOrControl')
+  if (isAltActive && prefixFlag !== 'alt') modifiers.push('Alt')
+  if (event.shiftKey && prefixFlag !== 'shift') modifiers.push('Shift')
+  if (event.metaKey && prefixFlag !== 'meta') modifiers.push(isMac ? 'CommandOrControl' : 'Meta')
+
+  if (!prefix && modifiers.length === 0) return null
 
   const specialKeysMap = {
     ArrowUp: 'Up',
@@ -141,25 +188,40 @@ export function getShortcutAccelerator(event: KeyboardEvent) {
   if (keyCode in specialKeysMap) {
     key = specialKeysMap[keyCode as keyof typeof specialKeysMap]
   }
-  return `${modifiers.join('+')}+${key}`
+  return [...(prefix ? [prefix] : []), ...modifiers, key].join('+')
+}
+
+/** Accelerator tokens that act as modifiers, including the sacrificial prefixes */
+const modifierLabels: Record<string, { mac: string; other: string }> = {
+  Control: { mac: '⌃', other: 'Ctrl' },
+  CommandOrControl: { mac: '⌘', other: 'Ctrl' },
+  Alt: { mac: '⌥', other: 'Alt' },
+  Shift: { mac: '⇧', other: 'Shift' },
+  Meta: { mac: 'Meta', other: 'Meta' },
+  RightControl: { mac: '右⌃', other: '右Ctrl' },
+  RightAlt: { mac: '右⌥', other: '右Alt' },
+  RightCommand: { mac: '右⌘', other: '右Ctrl' },
+  RightShift: { mac: '右⇧', other: '右Shift' }
+}
+
+const keyLabels: Record<string, string> = {
+  Up: '↑',
+  Down: '↓',
+  Left: '←',
+  Right: '→',
+  Enter: '↵'
 }
 
 export function getShortcutAcceleratorDisplay(accelerator: string) {
-  const modifiers: string[] = []
-  if (accelerator.startsWith('Control')) modifiers.push('⌃')
-  if (accelerator.includes('CommandOrControl')) modifiers.push(isMac ? '⌘' : 'Ctrl')
-  if (accelerator.includes('Alt')) modifiers.push(isMac ? '⌥' : 'Alt')
-  if (accelerator.includes('Shift')) modifiers.push(isMac ? '⇧' : 'Shift')
-  if (accelerator.includes('Meta')) modifiers.push('Meta')
+  const parts = splitAccelerator(accelerator)
+  if (parts.length === 0) return ''
 
-  const specialKeysMap = {
-    Up: '↑',
-    Down: '↓',
-    Left: '←',
-    Right: '→',
-    Enter: '↵'
-  } as const
-  const key = accelerator.split('+').at(-1)!
+  const labels = parts
+    .slice(0, -1)
+    .map((token) => modifierLabels[token])
+    .filter(Boolean)
+    .map((label) => (isMac ? label.mac : label.other))
 
-  return `${modifiers.join('+')}+${key in specialKeysMap ? specialKeysMap[key] : key}`
+  const key = parts[parts.length - 1]
+  return [...labels, keyLabels[key] ?? key].join('+')
 }
