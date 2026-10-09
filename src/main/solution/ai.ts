@@ -9,9 +9,9 @@ const STREAM_CHUNK_DELAY_MS = 12
 
 // The system prompt is fully managed by the renderer (prompt scenes in the
 // settings store) and synced here via updateAppSettings on app startup
-function getSystemPrompt(extra?: string) {
+function getSystemPrompt() {
   const scenePrompt = settings.scenes.find((scene) => scene.id === settings.activeSceneId)?.prompt
-  return [scenePrompt ?? settings.customPrompt, extra].filter(Boolean).join('\n\n') || undefined
+  return scenePrompt || settings.customPrompt || undefined
 }
 
 function getModel(aiSettings: ReturnType<typeof getEffectiveAISettings>) {
@@ -114,9 +114,7 @@ export function getFollowUpStream(
 export function getGeneralStream(messages: ModelMessage[], abortSignal?: AbortSignal) {
   const { textStream } = streamText({
     ...getStreamOptions(),
-    system: getSystemPrompt(
-      '注意：如果有多张截图，请结合所有截图内容进行完整分析，不要遗漏任何部分。'
-    ),
+    system: getSystemPrompt(),
     messages,
     abortSignal,
     onError: (err) => {

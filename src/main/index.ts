@@ -55,16 +55,7 @@ app.whenReady().then(() => {
   // the addon is missing).
   initHookRuntime()
 
-  // Auto-approve getDisplayMedia for system audio loopback capture
-  session.defaultSession.setDisplayMediaRequestHandler((_request, callback) => {
-    desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
-      if (sources.length > 0) {
-        callback({ video: sources[0], audio: 'loopback' })
-      }
-    })
-  })
-
-  // Auto-approve microphone access so users can enumerate and select audio input devices
+  // Auto-approve microphone access so the transcriber can capture the room
   session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
     if (['media', 'microphone', 'audio'].includes(permission)) {
       callback(true)
@@ -72,6 +63,24 @@ app.whenReady().then(() => {
       callback(false)
     }
   })
+
+  // The system-audio track (the interviewer's voice) comes in through
+  // getDisplayMedia, which Electron only serves once a handler is installed.
+  // `loopback` is what puts the speakers' own output into the stream instead of
+  // the microphone; only Windows can do it without a virtual audio device.
+  session.defaultSession.setDisplayMediaRequestHandler(
+    (_request, callback) => {
+      void desktopCapturer.getSources({ types: ['screen'] }).then((sources) => {
+        const primary = sources[0]
+        if (!primary) return
+        callback({
+          video: primary,
+          audio: process.platform === 'win32' ? 'loopback' : undefined
+        })
+      })
+    },
+    { useSystemPicker: false }
+  )
 
   // Default open or close DevTools by F12 in development
   // and ignore CommandOrControl + R in production.

@@ -203,20 +203,22 @@ export default function SettingsPage() {
 
             <div className="flex items-center justify-between">
               <label className="text-sm font-medium">
-                音频输入设备
-                <span className="ml-2 text-xs font-light">选择麦克风，留空则捕获系统音频</span>
+                麦克风设备
+                <span className="ml-2 text-xs font-light">
+                  用于收录你自己的声音（候选人），留空用系统默认；面试官的声音由系统音频收录
+                </span>
               </label>
               <Select
-                value={audioInputDeviceId || 'system'}
+                value={audioInputDeviceId || 'default'}
                 onValueChange={(val) =>
-                  updateSetting('audioInputDeviceId', val === 'system' ? '' : val)
+                  updateSetting('audioInputDeviceId', val === 'default' ? '' : val)
                 }
               >
                 <SelectTrigger className="w-60 bg-white">
-                  <SelectValue placeholder="系统音频（默认）" />
+                  <SelectValue placeholder="系统默认麦克风" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="system">系统音频（默认）</SelectItem>
+                  <SelectItem value="default">系统默认麦克风</SelectItem>
                   {audioDevices
                     .filter((d) => d.kind === 'audioinput')
                     .map((d) => (

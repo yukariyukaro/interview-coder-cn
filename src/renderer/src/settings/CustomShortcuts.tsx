@@ -143,8 +143,20 @@ export function CustomShortcuts() {
             shortcut="stopSolutionStream"
           />
           <Shortcut
-            label="语音转录"
-            description="开始/暂停实时语音转录"
+            label="仅发送语音转录"
+            description="不带截图，把自上次发送以来新转录的内容直接发给 AI"
+            shortcut="sendTranscription"
+            disabled={!dashscopeApiKey}
+          />
+          <Shortcut
+            label="系统音频转录"
+            description="开始/暂停收录系统播放的声音（面试官提问）"
+            shortcut="toggleSystemTranscription"
+            disabled={!dashscopeApiKey}
+          />
+          <Shortcut
+            label="麦克风转录"
+            description="开始/暂停收录麦克风（你自己的说话）"
             shortcut="toggleTranscription"
             disabled={!dashscopeApiKey}
           />

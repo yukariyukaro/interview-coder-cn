@@ -3,6 +3,7 @@ import { electronAPI } from '@electron-toolkit/preload'
 import type { AppSettings } from '../main/core/settings'
 import type { AppState } from '../main/core/state'
 import type { HookStatus } from '../main/input/hook-runtime'
+import type { AudioSource } from '../main/input/transcription'
 
 // Custom APIs for renderer
 const api = {
@@ -90,6 +91,7 @@ const api = {
       | 'takeScreenshot'
       | 'appendScreenshot'
       | 'stopSolutionStream'
+      | 'sendTranscription'
       | 'ignoreOrEnableMouse'
       | 'increaseOpacity'
       | 'decreaseOpacity'
@@ -102,6 +104,7 @@ const api = {
       | 'moveMainWindowLeft'
       | 'moveMainWindowRight'
       | 'toggleTranscription'
+      | 'toggleSystemTranscription'
       | 'clearTranscription'
   ) => ipcRenderer.invoke('triggerAction', action),
   setToolbarVisible: (visible: boolean) => ipcRenderer.invoke('setToolbarVisible', visible),
@@ -259,42 +262,58 @@ const api = {
   // Select screenshot save directory
   selectScreenshotDir: () => ipcRenderer.invoke('selectScreenshotDir') as Promise<string | null>,
 
-  // Transcription
-  startTranscription: (apiKey: string) => ipcRenderer.invoke('start-transcription', apiKey),
-  stopTranscription: () => ipcRenderer.invoke('stop-transcription'),
-  sendTranscriptionAudioChunk: (chunk: ArrayBuffer) =>
-    ipcRenderer.send('transcription-audio-chunk', chunk),
-  getTranscriptionText: () => ipcRenderer.invoke('get-transcription-text') as Promise<string>,
+  // Transcription. Two independent tracks: `system` is the meeting's own audio (the
+  // interviewer), `mic` is the candidate. Every call names the track it belongs to.
+  startTranscription: (apiKey: string, source: AudioSource) =>
+    ipcRenderer.invoke('start-transcription', apiKey, source),
+  stopTranscription: (source: AudioSource) => ipcRenderer.invoke('stop-transcription', source),
+  sendTranscriptionAudioChunk: (chunk: ArrayBuffer, source: AudioSource) =>
+    ipcRenderer.send('transcription-audio-chunk', chunk, source),
+  // Whether a track is listening, and the transcript it should display — the
+  // renderer realigns against both after a page reload
+  getTranscriptionStatus: (source: AudioSource) =>
+    ipcRenderer.invoke('get-transcription-status', source) as Promise<boolean>,
+  getTranscriptionText: (source: AudioSource) =>
+    ipcRenderer.invoke('get-transcription-text', source) as Promise<string>,
 
-  onToggleTranscription: (callback: () => void) => {
-    ipcRenderer.on('toggle-transcription', callback)
+  onToggleTranscription: (callback: (source: AudioSource) => void) => {
+    ipcRenderer.on('toggle-transcription', (_event, source) => callback(source))
   },
   removeToggleTranscriptionListener: () => {
     ipcRenderer.removeAllListeners('toggle-transcription')
   },
-  onTranscriptionText: (callback: (data: { text: string; isPartial: boolean }) => void) => {
-    ipcRenderer.on('transcription-text', (_event, data) => callback(data))
+  onTranscriptionText: (
+    callback: (source: AudioSource, data: { text: string; isPartial: boolean }) => void
+  ) => {
+    ipcRenderer.on('transcription-text', (_event, source, data) => callback(source, data))
   },
   removeTranscriptionTextListener: () => {
     ipcRenderer.removeAllListeners('transcription-text')
   },
-  onTranscriptionError: (callback: (message: string) => void) => {
-    ipcRenderer.on('transcription-error', (_event, message) => callback(message))
+  onTranscriptionError: (callback: (source: AudioSource, message: string) => void) => {
+    ipcRenderer.on('transcription-error', (_event, source, message) => callback(source, message))
   },
   removeTranscriptionErrorListener: () => {
     ipcRenderer.removeAllListeners('transcription-error')
   },
-  onTranscriptionStopped: (callback: () => void) => {
-    ipcRenderer.on('transcription-stopped', callback)
+  onTranscriptionStopped: (callback: (source: AudioSource) => void) => {
+    ipcRenderer.on('transcription-stopped', (_event, source) => callback(source))
   },
   removeTranscriptionStoppedListener: () => {
     ipcRenderer.removeAllListeners('transcription-stopped')
   },
-  onTranscriptionCleared: (callback: () => void) => {
-    ipcRenderer.on('transcription-cleared', callback)
+  onTranscriptionCleared: (callback: (source: AudioSource) => void) => {
+    ipcRenderer.on('transcription-cleared', (_event, source) => callback(source))
   },
   removeTranscriptionClearedListener: () => {
     ipcRenderer.removeAllListeners('transcription-cleared')
+  },
+  // "Send transcription" was pressed with nothing new since the last send
+  onTranscriptionEmpty: (callback: () => void) => {
+    ipcRenderer.on('transcription-empty', callback)
+  },
+  removeTranscriptionEmptyListener: () => {
+    ipcRenderer.removeAllListeners('transcription-empty')
   }
 }
 

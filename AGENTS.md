@@ -5,26 +5,27 @@
 **Interview Coder CN** (截屏解题助手) is a desktop application that captures screenshots of on-screen problems (coding challenges, exam questions, or anything else) and uses AI (vision models) to generate solutions in real-time. The window is invisible to screen-sharing software, making it suitable for use during coding interviews and online assessments.
 
 Key capabilities:
+
 - Global shortcuts trigger screenshot capture → AI analysis → streamed solution display
 - Frameless, transparent, always-on-top overlay window invisible to screen-sharing
 - Mouse passthrough mode (window ignores mouse events)
 - Multi-screenshot conversation continuity (append screenshots to existing context)
 - Follow-up questions within the same conversation
-- Real-time speech transcription (DashScope Fun-ASR) — transcribed text is attached to screenshots when sent to AI
+- Real-time speech transcription (DashScope Fun-ASR) — the microphone picks up the whole interview (the meeting audio is played out loud), attached to the next AI request and mirrored to a per-session transcript file on disk
 - Configurable AI provider (OpenAI, SiliconFlow, OpenRouter, or any OpenAI-compatible API)
 
 ## Tech Stack
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | Electron 37 (electron-vite 4) |
-| Frontend | React 19, TypeScript 5.8 |
-| Styling | Tailwind CSS v4, shadcn/ui (New York style), Radix primitives |
-| State | Zustand 5 (5 stores, 2 with localStorage persistence) |
-| Routing | react-router v7 (HashRouter, 3 routes) |
-| AI | Vercel AI SDK (`ai` + `@ai-sdk/openai`), streaming via `streamText()` |
-| Build | electron-vite (Vite 7), electron-builder 25 |
-| Linting | ESLint 9 (flat config), Prettier |
+| Layer     | Technology                                                            |
+| --------- | --------------------------------------------------------------------- |
+| Framework | Electron 37 (electron-vite 4)                                         |
+| Frontend  | React 19, TypeScript 5.8                                              |
+| Styling   | Tailwind CSS v4, shadcn/ui (New York style), Radix primitives         |
+| State     | Zustand 5 (5 stores, 2 with localStorage persistence)                 |
+| Routing   | react-router v7 (HashRouter, 3 routes)                                |
+| AI        | Vercel AI SDK (`ai` + `@ai-sdk/openai`), streaming via `streamText()` |
+| Build     | electron-vite (Vite 7), electron-builder 25                           |
+| Linting   | ESLint 9 (flat config), Prettier                                      |
 
 ## Directory Structure
 
@@ -78,17 +79,17 @@ src/
         ├── lib/
         │   ├── store/        # Zustand stores
         │   │   ├── app.ts       # ignoreMouse state, synced from main process
-        │   │   ├── settings.ts  # API config, model, prompt scenes, opacity, toolbar (persisted v8)
-        │   │   ├── shortcuts.ts # Shortcut bindings (persisted v9, with migration)
+        │   │   ├── settings.ts  # API config, model, prompt scenes, opacity, toolbar (persisted v10)
+        │   │   ├── shortcuts.ts # Shortcut bindings (persisted v11, with migration)
         │   │   ├── hook.ts      # Invisible-shortcut status mirrored from main (not persisted)
         │   │   ├── solution.ts  # Loading state, solution chunks, screenshots, errors
-        │   │   └── transcription.ts # Transcription state: isTranscribing, text, error
+        │   │   └── transcription.ts # Transcription state: isTranscribing, transcriptionText, error
         │   ├── toolbar-actions.ts # Toolbar button list (action + icon + label), shared with help
         │   ├── utils/
         │   │   ├── index.ts     # cn() helper, getCloneableFields()
         │   │   ├── env.ts       # isMac, platformAlt, platform
         │   │   └── keyboard.ts  # Accelerator string conversion
-        │   └── audio-capture.ts # System audio capture via getDisplayMedia for transcription
+        │   └── audio-capture.ts # Microphone capture, downsampled to 16kHz PCM
         └── assets/
             ├── base.css      # Tailwind @import, CSS variables, app layout styles
             └── main.css      # Tailwind + typography plugin + theme variables (oklch)
@@ -148,6 +149,7 @@ packages/shortcut-tokens/    # Shared vocabulary for the sacrificial right-side 
 ### IPC Channels
 
 **Renderer → Main (invoke):**
+
 - `getAppSettings` / `updateAppSettings` — settings CRUD
 - `updateAppState` — sync `inCoderPage`, `ignoreMouse`
 - `initShortcuts` / `getShortcuts` / `updateShortcuts` — shortcut management
@@ -157,10 +159,11 @@ packages/shortcut-tokens/    # Shared vocabulary for the sacrificial right-side 
 - `sendFollowUpQuestion` — follow-up within conversation
 - `triggerAction` / `setToolbarVisible` — overlay toolbar: run a shortcut action, toggle the window
 - `window-resize-start` / `window-resize-stop` (`send`, not `invoke`) — begin/end a cursor-tracked window resize
-- `start-transcription` / `stop-transcription` — speech transcription lifecycle
-- `get-transcription-text` / `clear-transcription-text` — read/clear accumulated text
+- `start-transcription` / `stop-transcription` — speech transcription lifecycle (single microphone track)
+- `get-transcription-status` / `get-transcription-text` — whether a track is listening, and the transcript it should display; the renderer realigns against both on mount
 
 **Main → Renderer (send):**
+
 - `sync-app-state` — push state changes (e.g., mouse ignore toggle)
 - `screenshot-taken` / `screenshots-updated` — screenshot data (`screenshots-updated` also carries the untruncated conversation total)
 - `solution-clear` / `solution-chunk` / `solution-complete` / `solution-stopped` / `solution-error` — AI streaming lifecycle
@@ -169,18 +172,18 @@ packages/shortcut-tokens/    # Shared vocabulary for the sacrificial right-side 
 - `toggle-transcription` — trigger start/stop transcription from shortcut
 - `sync-toolbar-settings` — push toolbar-only settings (hover dwell) into the toolbar window
 - `hook-status-changed` — the invisible-shortcut channel changed (installed, degraded, re-installed)
-- `transcription-text` / `transcription-error` / `transcription-stopped` / `transcription-cleared` — transcription events
+- `transcription-text` / `transcription-error` / `transcription-stopped` / `transcription-cleared` / `transcription-empty` — transcription events (the last one: "send transcription" was pressed with nothing new to send)
 
 ### Zustand Stores
 
-| Store | File | Persisted | Key State |
-|-------|------|-----------|-----------|
-| `useSettingsStore` | `lib/store/settings.ts` | Yes (v10) | `apiBaseURL`, `apiKey`, `model`, `customModels`, `scenes` (prompt scenes), `activeSceneId`, `customPrompt` (derived from active scene), `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `screenshotDisplay`, `screenshotAutoSave`, `answerAutoSave`, `screenshotDir`, `dashscopeApiKey` |
-| `useShortcutsStore` | `lib/store/shortcuts.ts` | Yes (v9) | `shortcuts` (action → key mapping with categories; a right-side modifier token marks a binding as invisible-capable) |
-| `useHookStatusStore` | `lib/store/hook.ts` | No | `available`, `reason`, `hookedCount` mirrored from main |
-| `useSolutionStore` | `lib/store/solution.ts` | No | `isLoading`, `solutionChunks`, `screenshotData`, `errorMessage` |
-| `useTranscriptionStore` | `lib/store/transcription.ts` | No | `isTranscribing`, `transcriptionText`, `errorMessage` |
-| `useAppStore` | `lib/store/app.ts` | No | `ignoreMouse` |
+| Store                   | File                         | Persisted | Key State                                                                                                                                                                                                                                                                                                  |
+| ----------------------- | ---------------------------- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `useSettingsStore`      | `lib/store/settings.ts`      | Yes (v10) | `apiBaseURL`, `apiKey`, `model`, `customModels`, `scenes` (prompt scenes), `activeSceneId`, `customPrompt` (derived from active scene), `opacity`, `resizable`, `showOverlayToolbar`, `toolbarHoverDelay`, `screenshotDisplay`, `screenshotAutoSave`, `answerAutoSave`, `screenshotDir`, `dashscopeApiKey` |
+| `useShortcutsStore`     | `lib/store/shortcuts.ts`     | Yes (v11) | `shortcuts` (action → key mapping with categories; a right-side modifier token marks a binding as invisible-capable)                                                                                                                                                                                       |
+| `useHookStatusStore`    | `lib/store/hook.ts`          | No        | `available`, `reason`, `hookedCount` mirrored from main                                                                                                                                                                                                                                                    |
+| `useSolutionStore`      | `lib/store/solution.ts`      | No        | `isLoading`, `solutionChunks`, `screenshotData`, `errorMessage`                                                                                                                                                                                                                                            |
+| `useTranscriptionStore` | `lib/store/transcription.ts` | No        | `isTranscribing`, `transcriptionText`, `errorMessage`                                                                                                                                                                                                                                                    |
+| `useAppStore`           | `lib/store/app.ts`           | No        | `ignoreMouse`                                                                                                                                                                                                                                                                                              |
 
 Settings are bidirectionally synced: renderer persists to localStorage, and on mount syncs to main process via `updateAppSettings()`. Main process `.env` values serve as initial defaults only.
 
@@ -191,6 +194,7 @@ Adding a settings key needs no `version` bump: zustand shallow-merges the persis
 ### Window Stealth
 
 The app is designed to be invisible to screen-sharing software:
+
 - `BrowserWindow` options: `transparent: true`, `frame: false`, `skipTaskbar: true`
 - `setContentProtection(true)` prevents screen capture of the window itself
 - `setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true })`
@@ -200,6 +204,7 @@ The app is designed to be invisible to screen-sharing software:
 ### Overlay Toolbar
 
 A second `BrowserWindow` (`src/main/windows/toolbar-window.ts`) that renders the `/toolbar` route, so the shortcut actions can be driven with the mouse instead of the keyboard:
+
 - Owns its own visibility state: the renderer calls `setToolbarVisible()` (main page + `showOverlayToolbar` setting), main additionally requires the main window to be visible. Never call `showInactive()` on it directly — go through `showToolbar()` / `hideToolbar()`.
 - `focusable: false` so clicking a button never pulls focus away from the app underneath
 - Opacity is applied at the window level to match the main window, which applies its own via `document.body.style.opacity`
@@ -211,6 +216,7 @@ A second `BrowserWindow` (`src/main/windows/toolbar-window.ts`) that renders the
 ### Window Resizing
 
 Both windows are created with `resizable: false` — toggling Electron's native resizable style breaks transparency on Windows — so resizing is implemented by hand:
+
 - `WindowResizeHandles` renders eight fixed-position edge/corner divs — or, with `axis="x"`, just the two side edges — and sends only `window-resize-start` (pointerdown) and `window-resize-stop`
 - `src/main/windows/window-resize.ts` then polls `screen.getCursorScreenPoint()` and calls `setBounds()`. The cursor is sampled in main because the toolbar is a non-activating panel on macOS and never receives a drag's pointer moves
 - The drag is ended by a `window`-level `pointerup`/`pointercancel`/`blur` listener, with a 30s safety timeout in main as the last resort
@@ -237,10 +243,14 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 
 - Uses DashScope (Alibaba Cloud) Fun-ASR real-time ASR via WebSocket (`src/main/input/transcription.ts`)
 - Requires a separate `dashscopeApiKey` configured in settings
-- Audio is captured in the renderer via `getDisplayMedia()` (system audio), downsampled to 16kHz PCM, and streamed to main process via IPC
-- `TranscriptionBar` is absolute-positioned at the top of the coder page, shows up to 3 lines with auto-scroll
-- On screenshot (`takeScreenshot` / `appendScreenshot`), accumulated transcription text is automatically attached to the AI prompt, then cleared
-- `clearTranscription` shortcut clears text without submitting to AI
+- One track, and it is the microphone (`getUserMedia`, downsampled to 16kHz PCM in the renderer and streamed to main via IPC). The interview is played out loud, so that single track hears both the interviewer and the candidate — no `getDisplayMedia` loopback, no virtual audio device, no screen-recording permission for audio
+- That is a deliberate trade-off: attribution is lost. Nothing can tell the interviewer apart from the candidate, so the prompt gets one plain `【语音转录】` block and the archive has no speaker column. Loopback capture — or a native Rust/CoreAudio/WASAPI module, as Pika does — is what it would take to bring it back
+- Main keeps, for the track, an ordered list of finalized utterances plus a cursor of how many were already handed to the AI. Handing over never wipes the list, so the transcript stays readable after it has been sent
+- The sentence still being recognized is included in the hand-over, but is not sent twice once finalized
+- Transcription runs for as long as it is switched on, **not** for as long as the coder page is mounted: opening the settings or help page keeps the capture going. `CoderPage` therefore never stops it on unmount — it realigns `useTranscriptionStore` against `get-transcription-status` / `get-transcription-text` on mount, and stands the track down if main still holds one that this renderer can no longer feed
+- Every finalized utterance is also mirrored to the session transcript file (`transcript_<app start>.md`, next to the saved answers) as it arrives — one file for the whole run, with a `### <time>` section per conversation round — so the spoken context outlives both the on-screen buffer and the conversation itself
+- `TranscriptionBar` is absolute-positioned at the top of the coder page, up to 3 lines with auto-scroll
+- Starting a new conversation round (a new screenshot) opens a new section and clears what is on screen; the `clearTranscription` shortcut clears the screen only, without submitting to the AI
 - Transcription shortcuts are disabled in settings UI when `dashscopeApiKey` is not configured
 
 ### Shortcut System
@@ -251,8 +261,8 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 - **Using one of those tokens is what enables the hook** — there is no separate "invisible mode" switch.
 - The hook is installed lazily (only while at least one binding needs it) and torn down when none does.
 - Degrading is key-for-key identical: `toFallbackAccelerator(defaultKey)` maps e.g. `RightControl+H` back to `CommandOrControl+H`. `src/renderer/src/lib/store/shortcuts.test.ts` asserts this invariant for every default on both platforms.
-- Renderer stores shortcut config in Zustand (persisted, v9); sends to main on init. The v7→v8 migration upgrades untouched defaults to the right-side modifiers and leaves customised bindings alone; v8→v9 folds the short-lived `hookKey` field back into `key`. Bump `version` whenever the shape changes — a mismatch there leaves the hook silently unused.
-- On Windows, `Alt`-based *system* shortcuts also register a `Ctrl+Alt` variant for compatibility.
+- Renderer stores shortcut config in Zustand (persisted, v11); sends to main on init. The v7→v8 migration upgrades untouched defaults to the right-side modifiers and leaves customised bindings alone; v8→v9 folds the short-lived `hookKey` field back into `key`. Bump `version` whenever the shape changes — a mismatch there leaves the hook silently unused. **Adding a default action counts as a change**: while the stored version matches, `migrate` is skipped and the default `merge` swaps the whole `shortcuts` object out for the stored copy, so the new action is missing for every existing profile (its settings row renders nothing and the binding is never registered).
+- On Windows, `Alt`-based _system_ shortcuts also register a `Ctrl+Alt` variant for compatibility.
 - Shortcut actions are string-keyed callbacks in `src/main/input/shortcuts.ts`; hook triggers dispatch through the very same callbacks, so the `state.inCoderPage` guards are unchanged.
 - Default shortcuts use `platformAlt` for their fallback meaning only; the stored values are the sacrificial right-side forms.
 
@@ -265,7 +275,7 @@ Both windows are created with `resizable: false` — toggling Electron's native 
   - Built with N-API, so no `electron-rebuild` step is needed and `npmRebuild: false` in `electron-builder.yml` stays correct.
   - Windows needs the "Desktop development with C++" workload, and the SDK must be **registered on the VS instance** — node-gyp reads the instance's package list, so an SDK that merely exists on disk still reports `missing any Windows SDK`. macOS needs Xcode Command Line Tools plus the Accessibility / Input Monitoring grant.
   - `node-gyp` is an explicit devDependency on v11+: the bundled gyp of v9 imports `distutils`, which Python 3.12 removed.
-- The state machine lives in C++ (`native/input-hook/src/state.h`) because a macOS `CGEventTap` must decide synchronously on the tap thread, where calling back into JS is not allowed. Rule: a prefix is always swallowed, and while any prefix is held every key is swallowed; a modifier that was pressed *before* the prefix keeps leaking (its keydown already reached the window) and its keyup leaks too, so no orphan keyup is created.
+- The state machine lives in C++ (`native/input-hook/src/state.h`) because a macOS `CGEventTap` must decide synchronously on the tap thread, where calling back into JS is not allowed. Rule: a prefix is always swallowed, and while any prefix is held every key is swallowed; a modifier that was pressed _before_ the prefix keeps leaking (its keydown already reached the window) and its keyup leaks too, so no orphan keyup is created.
 - Because a prefix is swallowed system-wide, our own shortcut recorder would never see it. `setHookSuspended(true)` therefore uninstalls the hook for as long as the recorder is listening, and `refreshHookBindings()` refuses to bring it back up meanwhile.
 - Health:
   - Windows silently removes a low-level hook that keeps timing out, so `hook-runtime` compares "ms since the system last saw input" with "ms since the hook last saw a key" and reinstalls on a gap.
@@ -278,6 +288,7 @@ Both windows are created with `resizable: false` — toggling Electron's native 
 - `cn()` utility (clsx + tailwind-merge) for conditional class merging
 - `getCloneableFields()` strips functions from store state before sending over IPC
 - Platform-aware shortcut display via `ShortcutRenderer` (⌘, ⌥, ⇧ on Mac; Ctrl, Alt, Shift on Windows)
+- `AppContent`'s empty-state shortcut tip is `h-full` inside the fixed-height `#app-content`, so it occupies a whole screen and pushes anything after it below the fold. Render it only when the round has neither screenshots nor an answer — a transcription-only round produces an answer with no screenshot
 
 ## Development
 

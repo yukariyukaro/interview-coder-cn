@@ -4,14 +4,31 @@ import type { ModelMessage } from 'ai'
 import { getFollowUpStream, getGeneralStream, getSolutionStream } from './ai'
 import { createAnswerFilename, saveAnswerToDisk } from './save-answer'
 import { saveScreenshotToDisk } from './save-screenshot'
+import {
+  createTranscriptFilename,
+  formatTranscriptDocument,
+  formatTranscriptLine,
+  formatTranscriptSection,
+  saveTranscriptToDisk
+} from './save-transcript'
 import { getEffectiveAISettings, settings } from '../core/settings'
 import { solutionEventPublisher } from './solution-events'
 import { createSolutionDeltaBuffer } from './solution-delta-buffer'
 import { state } from '../core/state'
 import { takeScreenshot } from './take-screenshot'
-import { clearTranscriptionText, getTranscriptionText } from '../input/transcription'
+import {
+  AUDIO_SOURCES,
+  clearTranscriptionText,
+  consumePendingTranscription,
+  onTranscriptionSegment,
+  SOURCE_LABELS,
+  type AudioSource,
+  type TranscriptionSegment
+} from '../input/transcription'
 
 type AbortReason = 'user' | 'new-request'
+
+type RequestContentPart = { type: 'text'; text: string } | { type: 'image'; image: string }
 
 type StreamContext = {
   controller: AbortController
@@ -33,6 +50,9 @@ let recentScreenshots: string[] = []
 let screenshotCount = 0
 let hasAppendSeparator = false
 let answerFilename = ''
+/** The session's transcript: one file for the whole run, a section per conversation round */
+const transcriptFilename = createTranscriptFilename()
+const transcriptLines: string[] = []
 
 function extractErrorMessage(error: unknown): string {
   if (!(error instanceof Error)) return String(error) || '未知错误'
@@ -63,10 +83,20 @@ function sendSolutionDelta(text: string): void {
   solutionDeltaBuffer.push(text)
 }
 
+/**
+ * Open a conversation round: the file the answer is saved to, the transcript section
+ * it belongs to, and the event session every later publish needs.
+ */
+function startSolutionSession(startedAt = new Date()): void {
+  answerFilename = createAnswerFilename(startedAt)
+  recordTranscriptSection(startedAt)
+  solutionEventPublisher.resetSession()
+}
+
 function resetSolutionSession(mainWindow: BrowserWindow): void {
   solutionDeltaBuffer.clear()
-  answerFilename = createAnswerFilename()
-  solutionEventPublisher.resetSession()
+  startSolutionSession()
+  clearTranscriptionText()
   mainWindow.webContents.send('solution-clear')
 }
 
@@ -120,14 +150,56 @@ function createStreamContext(): StreamContext {
   return context
 }
 
-function consumeTranscription(mainWindow: BrowserWindow): string {
-  const text = getTranscriptionText()
-  if (text) {
-    clearTranscriptionText()
-    mainWindow.webContents.send('transcription-cleared')
-  }
-  return text
+/**
+ * Everything said since the last request, each track tagged with who spoke. That tag
+ * is all the prompt needs: any image in a request is a screenshot and any spoken line
+ * is a transcript, so neither has to be announced as such.
+ */
+function takeTranscription(): string {
+  return AUDIO_SOURCES.map((source) => ({
+    source,
+    text: consumePendingTranscription(source)
+      .map((segment) => segment.text.trim())
+      .join('')
+  }))
+    .filter(({ text }) => Boolean(text))
+    .map(({ source, text }) => `[${SOURCE_LABELS[source]}] ${text}`)
+    .join('\n')
 }
+
+/**
+ * A request carries the inputs themselves: the screenshot, plus whatever was new on
+ * either track. The spoken part is left out when there is nothing new, so an image
+ * can also arrive on its own.
+ */
+function buildRequestContent(transcription: string, screenshot: string): RequestContentPart[] {
+  const content: RequestContentPart[] = []
+  if (transcription) content.push({ type: 'text', text: transcription })
+  content.push({ type: 'image', image: screenshot })
+  return content
+}
+
+function persistTranscript(): Promise<void> {
+  return saveTranscriptToDisk(formatTranscriptDocument(transcriptLines), transcriptFilename)
+}
+
+/** Open a section for a new conversation round inside the session's transcript */
+function recordTranscriptSection(startedAt: Date): void {
+  if (transcriptLines.length > 0) transcriptLines.push('')
+  transcriptLines.push(formatTranscriptSection(startedAt.getTime()))
+  void persistTranscript()
+}
+
+/**
+ * Mirror every utterance to the session transcript as it is finalized, so the spoken
+ * context outlives both the on-screen buffer and the conversation itself.
+ */
+function archiveTranscriptionSegment(source: AudioSource, segment: TranscriptionSegment): void {
+  transcriptLines.push(formatTranscriptLine(source, segment))
+  void persistTranscript()
+}
+
+onTranscriptionSegment(archiveTranscriptionSegment)
 
 async function runStream({
   mainWindow,
@@ -205,22 +277,11 @@ export async function takeNewScreenshot(): Promise<void> {
   }
 
   saveScreenshotToDisk(screenshotData)
-  const transcriptionText = consumeTranscription(mainWindow)
+  const transcriptionText = takeTranscription()
   conversationMessages = [
     {
       role: 'user',
-      content: [
-        {
-          type: 'text',
-          text: transcriptionText
-            ? `这是语音转录内容：\n${transcriptionText}\n\n同时附上屏幕截图：`
-            : '这是屏幕截图'
-        },
-        {
-          type: 'image',
-          image: screenshotData
-        }
-      ]
+      content: buildRequestContent(transcriptionText, screenshotData)
     }
   ]
 
@@ -262,21 +323,10 @@ export async function appendScreenshot(): Promise<void> {
   }
 
   saveScreenshotToDisk(screenshotData)
-  const transcriptionText = consumeTranscription(mainWindow)
+  const transcriptionText = takeTranscription()
   conversationMessages.push({
     role: 'user',
-    content: [
-      {
-        type: 'text',
-        text: transcriptionText
-          ? `这是下一部分截图和语音转录内容：\n${transcriptionText}\n请结合之前所有截图和分析，继续分析解答，不要遗漏任何信息。`
-          : '这是下一部分截图，请结合之前所有截图和分析，继续分析解答，不要遗漏任何信息。'
-      },
-      {
-        type: 'image',
-        image: screenshotData
-      }
-    ]
+    content: buildRequestContent(transcriptionText, screenshotData)
   })
 
   const context = createStreamContext()
@@ -302,6 +352,58 @@ export async function appendScreenshot(): Promise<void> {
 export function stopSolutionStream(): boolean {
   requestGeneration += 1
   return abortCurrentStream('user')
+}
+
+/**
+ * Send the transcription accumulated since the last request to the AI without taking
+ * a screenshot (the interview flow: transcription can be sent on its own and acts as
+ * an incremental input to the existing conversation).
+ */
+export async function sendTranscriptionOnly(): Promise<void> {
+  const mainWindow = getReadyMainWindow()
+  if (!mainWindow) return
+
+  const transcriptionText = takeTranscription()
+  if (!transcriptionText) {
+    // Pressing the shortcut with nothing new to send looks exactly like a shortcut
+    // that does not work, so say so instead of returning silently
+    mainWindow.webContents.send('transcription-empty')
+    return
+  }
+
+  requestGeneration += 1
+  abortCurrentStream('new-request')
+  const context = createStreamContext()
+
+  const message: ModelMessage = {
+    role: 'user',
+    content: [{ type: 'text', text: transcriptionText }]
+  }
+  // Without a screenshot there is nothing on screen yet, so this request is what
+  // starts the round: it has to open the session itself, otherwise publishing the
+  // very first event throws and the request never runs
+  const startsRound = conversationMessages.length === 0
+  if (startsRound) {
+    startSolutionSession()
+    conversationMessages = [message]
+  } else {
+    conversationMessages.push(message)
+  }
+
+  sendRequestStarted(mainWindow)
+  // A round's first output needs no separator; a leading rule would just be noise
+  if (!startsRound) sendSolutionDelta(hasAppendSeparator ? '\n\n' : '\n\n---\n\n')
+  hasAppendSeparator = true
+
+  await runStream({
+    mainWindow,
+    context,
+    createStream: () => getGeneralStream(conversationMessages, context.controller.signal),
+    errorLabel: 'Error streaming transcription input:',
+    onCompleted: (response) => {
+      if (response) conversationMessages.push({ role: 'assistant', content: response })
+    }
+  })
 }
 
 export async function sendFollowUpQuestion(

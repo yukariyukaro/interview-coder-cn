@@ -20,7 +20,9 @@ const legacyDefaults: Record<string, { win32: string; darwin: string }> = {
   toggleColorMode: { win32: 'CommandOrControl+Shift+D', darwin: 'Alt+Shift+D' },
   appendScreenshot: { win32: 'CommandOrControl+Shift+Enter', darwin: 'Alt+Shift+Enter' },
   stopSolutionStream: { win32: 'CommandOrControl+.', darwin: 'Alt+.' },
+  sendTranscription: { win32: 'CommandOrControl+Enter', darwin: 'Alt+Enter' },
   toggleTranscription: { win32: 'CommandOrControl+T', darwin: 'Alt+T' },
+  toggleSystemTranscription: { win32: 'CommandOrControl+Shift+S', darwin: 'Alt+Shift+S' },
   clearTranscription: { win32: 'CommandOrControl+Shift+T', darwin: 'Alt+Shift+T' },
   pageUp: { win32: 'CommandOrControl+J', darwin: 'CommandOrControl+J' },
   pageDown: { win32: 'CommandOrControl+K', darwin: 'CommandOrControl+K' },
@@ -111,6 +113,43 @@ describe('v7 -> v8 migration', () => {
     // Customised: untouched, still registered through globalShortcut
     expect(shortcuts.pageUp.key).toBe('Control+Shift+P')
     expect(shortcuts.pageUp.defaultKey).toBe('CommandOrControl+J')
+
+    vi.unstubAllGlobals()
+  })
+})
+
+describe('v10 -> v11 migration', () => {
+  beforeEach(() => {
+    vi.resetModules()
+    vi.stubGlobal('localStorage', new MemoryStorage())
+  })
+
+  it('merges a default action that the stored profile predates', async () => {
+    // `sendTranscription` landed after v10. Without the bump, the stored `shortcuts`
+    // object is used verbatim and the action is missing for every existing profile.
+    const customised: Shortcut = {
+      action: 'hideOrShowMainWindow',
+      key: 'Control+Shift+P',
+      defaultKey: isMac ? 'RightAlt+H' : 'RightControl+H',
+      category: 'Window Management'
+    }
+    localStorage.setItem(
+      'interview-coder-shortcuts',
+      JSON.stringify({
+        state: { shortcuts: { [customised.action]: customised } },
+        version: 10
+      })
+    )
+
+    const { useShortcutsStore: freshStore } = await import('./shortcuts')
+    const { shortcuts } = freshStore.getState()
+
+    expect(shortcuts.sendTranscription).toBeDefined()
+    expect(toFallbackAccelerator(shortcuts.sendTranscription.key, currentPlatform)).toBe(
+      isMac ? 'Alt+Enter' : 'CommandOrControl+Enter'
+    )
+    // Customised bindings survive the merge untouched
+    expect(shortcuts.hideOrShowMainWindow.key).toBe('Control+Shift+P')
 
     vi.unstubAllGlobals()
   })

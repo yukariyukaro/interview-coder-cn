@@ -1,13 +1,18 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { TranscriptionSegment } from '../input/transcription'
 
 const mocks = vi.hoisted(() => ({
   getSolutionStream: vi.fn(),
+  getGeneralStream: vi.fn(),
   getFollowUpStream: vi.fn(),
   takeScreenshot: vi.fn(),
   saveScreenshotToDisk: vi.fn(),
   createAnswerFilename: vi.fn(() => 'answer-session.md'),
   saveAnswerToDisk: vi.fn(),
-  getTranscriptionText: vi.fn(() => ''),
+  createTranscriptFilename: vi.fn(() => 'transcript-session.md'),
+  saveTranscriptToDisk: vi.fn(),
+  onTranscriptionSegment: vi.fn(),
+  consumePendingTranscription: vi.fn((): TranscriptionSegment[] => []),
   clearTranscriptionText: vi.fn(),
   resetSession: vi.fn(),
   publish: vi.fn(),
@@ -23,7 +28,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('./ai', () => ({
   getSolutionStream: mocks.getSolutionStream,
-  getGeneralStream: vi.fn(),
+  getGeneralStream: mocks.getGeneralStream,
   getFollowUpStream: mocks.getFollowUpStream
 }))
 vi.mock('./take-screenshot', () => ({ takeScreenshot: mocks.takeScreenshot }))
@@ -32,13 +37,23 @@ vi.mock('./save-answer', () => ({
   createAnswerFilename: mocks.createAnswerFilename,
   saveAnswerToDisk: mocks.saveAnswerToDisk
 }))
+vi.mock('./save-transcript', () => ({
+  createTranscriptFilename: mocks.createTranscriptFilename,
+  saveTranscriptToDisk: mocks.saveTranscriptToDisk,
+  formatTranscriptLine: vi.fn((_source: string, segment: { text: string }) => segment.text),
+  formatTranscriptSection: vi.fn((at: number) => `### ${at}`),
+  formatTranscriptDocument: vi.fn((lines: string[]) => lines.join('\n'))
+}))
 vi.mock('../core/settings', () => ({
   settings: mocks.settings,
   getEffectiveAISettings: mocks.getEffectiveAISettings
 }))
 vi.mock('../core/state', () => ({ state: mocks.state }))
 vi.mock('../input/transcription', () => ({
-  getTranscriptionText: mocks.getTranscriptionText,
+  AUDIO_SOURCES: ['system', 'mic'],
+  SOURCE_LABELS: { system: '面试官', mic: '候选人' },
+  onTranscriptionSegment: mocks.onTranscriptionSegment,
+  consumePendingTranscription: mocks.consumePendingTranscription,
   clearTranscriptionText: mocks.clearTranscriptionText
 }))
 vi.mock('./solution-events', () => ({
@@ -85,6 +100,30 @@ describe('solution controller', () => {
     expect(completeCall).toBeGreaterThan(solutionChunkCall)
     expect(send).toHaveBeenCalledWith('solution-chunk', '答案：C')
     expect(mocks.publish).toHaveBeenCalledWith('solution.delta', { text: '答案：C' })
+    expect(mocks.saveAnswerToDisk).toHaveBeenCalledWith('答案：C', 'answer-session.md')
+  })
+
+  it('opens the round itself when a transcription-only request comes first', async () => {
+    // Without a screenshot nothing has opened the event session yet, and publishing
+    // `request.started` threw before the stream was created — the request never ran.
+    // A fresh module is needed: the conversation is module state that earlier tests fill
+    vi.resetModules()
+    const { sendTranscriptionOnly: sendTranscriptionFirst } = await import('./solution-controller')
+    const send = vi.fn()
+    global.mainWindow = {
+      isDestroyed: vi.fn(() => false),
+      webContents: { send }
+    } as never
+    mocks.consumePendingTranscription.mockReturnValueOnce([{ text: '我做过一个项目', at: 1 }])
+    mocks.getGeneralStream.mockReturnValueOnce(createStream(['收到']))
+
+    await sendTranscriptionFirst()
+
+    expect(mocks.resetSession).toHaveBeenCalled()
+    expect(mocks.getGeneralStream).toHaveBeenCalled()
+    expect(send).toHaveBeenCalledWith('ai-loading-start')
+    expect(send).toHaveBeenCalledWith('solution-chunk', '收到')
+    expect(send).toHaveBeenCalledWith('solution-complete')
     expect(mocks.saveAnswerToDisk).toHaveBeenCalledWith('答案：C', 'answer-session.md')
   })
 

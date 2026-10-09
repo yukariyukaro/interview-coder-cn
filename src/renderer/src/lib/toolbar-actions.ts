@@ -3,12 +3,14 @@ import {
   ArrowLeft,
   ArrowRight,
   ArrowUp,
+  AudioLines,
   Camera,
   ChevronDown,
   ChevronUp,
   CircleStop,
   ImagePlus,
   Mic,
+  MessagesSquare,
   MousePointer2,
   Sun,
   SunDim,
@@ -46,5 +48,11 @@ export const TOOLBAR_ACTIONS: ToolbarAction[] = [
   { action: 'moveMainWindowRight', Icon: ArrowRight, label: '向右移动窗口' },
   { action: 'increaseOpacity', Icon: Sun, label: '提高不透明度（更清晰）' },
   { action: 'decreaseOpacity', Icon: SunDim, label: '提高透明度（更透明）' },
-  { action: 'toggleTranscription', Icon: Mic, label: '开始/暂停语音转录' }
+  { action: 'sendTranscription', Icon: MessagesSquare, label: '仅发送语音转录' },
+  {
+    action: 'toggleSystemTranscription',
+    Icon: AudioLines,
+    label: '开始/暂停系统音频转录（面试官）'
+  },
+  { action: 'toggleTranscription', Icon: Mic, label: '开始/暂停麦克风转录（候选人）' }
 ]

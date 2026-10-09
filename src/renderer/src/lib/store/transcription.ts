@@ -1,30 +1,34 @@
 import { create } from 'zustand'
+import type { AudioSource } from '@/lib/audio-capture'
 
-interface TranscriptionState {
-  isTranscribing: boolean
-  transcriptionText: string
-  errorMessage: string | null
+type SourceState = {
+  /** This track is open and feeding the transcriber */
+  active: boolean
+  text: string
 }
 
-interface TranscriptionStore extends TranscriptionState {
-  setIsTranscribing: (v: boolean) => void
-  setTranscriptionText: (text: string) => void
-  clearText: () => void
-  setError: (msg: string | null) => void
-  resetState: () => void
-}
-
-const defaultState: TranscriptionState = {
-  isTranscribing: false,
-  transcriptionText: '',
-  errorMessage: null
+interface TranscriptionStore {
+  sources: Record<AudioSource, SourceState>
+  setSourceActive: (source: AudioSource, active: boolean) => void
+  setSourceText: (source: AudioSource, text: string) => void
+  clearSourceText: (source: AudioSource) => void
 }
 
 export const useTranscriptionStore = create<TranscriptionStore>()((set) => ({
-  ...defaultState,
-  setIsTranscribing: (v) => set({ isTranscribing: v }),
-  setTranscriptionText: (text) => set({ transcriptionText: text }),
-  clearText: () => set({ transcriptionText: '' }),
-  setError: (msg) => set({ errorMessage: msg }),
-  resetState: () => set(defaultState)
+  sources: {
+    system: { active: false, text: '' },
+    mic: { active: false, text: '' }
+  },
+  setSourceActive: (source, active) =>
+    set((state) => ({
+      sources: { ...state.sources, [source]: { ...state.sources[source], active } }
+    })),
+  setSourceText: (source, text) =>
+    set((state) => ({
+      sources: { ...state.sources, [source]: { ...state.sources[source], text } }
+    })),
+  clearSourceText: (source) =>
+    set((state) => ({
+      sources: { ...state.sources, [source]: { ...state.sources[source], text: '' } }
+    }))
 }))

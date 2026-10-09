@@ -35,6 +35,7 @@ import {
 import {
   appendScreenshot,
   sendFollowUpQuestion,
+  sendTranscriptionOnly,
   stopSolutionStream,
   takeNewScreenshot
 } from '../solution/solution-controller'
@@ -341,14 +342,28 @@ const callbacks: Record<string, () => void> = {
   toggleTranscription: () => {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
-    mainWindow.webContents.send('toggle-transcription')
+    mainWindow.webContents.send('toggle-transcription', 'mic')
+  },
+
+  toggleSystemTranscription: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+    mainWindow.webContents.send('toggle-transcription', 'system')
   },
 
   clearTranscription: () => {
     const mainWindow = global.mainWindow
     if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+    // Clears the on-screen transcript; the session's file keeps what was said
     clearTranscriptionText()
-    mainWindow.webContents.send('transcription-cleared')
+  },
+
+  // Send the transcription accumulated since the last request to the AI, without
+  // taking a screenshot (the interview flow: transcription can be sent on its own)
+  sendTranscription: () => {
+    const mainWindow = global.mainWindow
+    if (!mainWindow || mainWindow.isDestroyed() || !state.inCoderPage) return
+    void sendTranscriptionOnly()
   }
 }
 
@@ -368,7 +383,9 @@ const clickableActions = new Set([
   'moveMainWindowLeft',
   'moveMainWindowRight',
   'toggleTranscription',
-  'clearTranscription'
+  'toggleSystemTranscription',
+  'clearTranscription',
+  'sendTranscription'
 ])
 
 function unregisterRegisteredKeys(shortcut: Shortcut) {

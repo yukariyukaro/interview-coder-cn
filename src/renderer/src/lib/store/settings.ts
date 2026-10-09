@@ -1,8 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import codingPrompt from './prompts/coding.md?raw'
-import englishExamPrompt from './prompts/english-exam.md?raw'
-import aptitudeTestPrompt from './prompts/aptitude-test.md?raw'
+import interviewAssistPrompt from './prompts/interview-assist.md?raw'
 import generalQaPrompt from './prompts/general-qa.md?raw'
 import { platformAlt } from '../utils/env'
 
@@ -32,8 +31,7 @@ export const CODING_SCENE_ID = 'coding'
 /** Default prompts for all preset scenes, maintained as Markdown files under ./prompts */
 export const PRESET_SCENE_PROMPTS: Record<string, string> = {
   [CODING_SCENE_ID]: codingPrompt,
-  'english-exam': englishExamPrompt,
-  'aptitude-test': aptitudeTestPrompt,
+  'interview-assist': interviewAssistPrompt,
   'general-qa': generalQaPrompt
 }
 
@@ -50,25 +48,14 @@ const createPresetScenes = (): PromptScene[] => [
     isPreset: true
   },
   {
-    id: 'english-exam',
-    name: '英语考试',
-    prompt: PRESET_SCENE_PROMPTS['english-exam'],
+    id: 'interview-assist',
+    name: '面试辅助',
+    prompt: PRESET_SCENE_PROMPTS['interview-assist'],
     apiBaseURL: '',
     apiKey: '',
     model: '',
-    reasoningEffort: 'low',
-    shortcut: `${platformAlt}+E`,
-    isPreset: true
-  },
-  {
-    id: 'aptitude-test',
-    name: '能力测评',
-    prompt: PRESET_SCENE_PROMPTS['aptitude-test'],
-    apiBaseURL: '',
-    apiKey: '',
-    model: '',
-    reasoningEffort: 'low',
-    shortcut: `${platformAlt}+P`,
+    reasoningEffort: 'default',
+    shortcut: `${platformAlt}+I`,
     isPreset: true
   },
   {

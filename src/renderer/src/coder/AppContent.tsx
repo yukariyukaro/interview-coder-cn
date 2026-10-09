@@ -190,6 +190,9 @@ export function AppContent() {
   // covers a render that lands between the two
   const screenshots =
     recentScreenshots.length > 0 ? recentScreenshots : screenshotData ? [screenshotData] : []
+  // The tip is full-height, so it would push an answer that arrived without any
+  // screenshot (a transcription-only round) below the fold
+  const showShortcutTip = screenshots.length === 0 && solutionChunks.length === 0
 
   return (
     <div id="app-content" className="px-6 py-4">
@@ -232,7 +235,7 @@ export function AppContent() {
 
       {/* Screenshots, rendered as the `screenshotDisplay` setting asks */}
       {screenshots.length === 0 ? (
-        <ShortcutTip />
+        showShortcutTip && <ShortcutTip />
       ) : (
         <Screenshots
           screenshots={screenshots}

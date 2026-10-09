@@ -85,10 +85,10 @@ vi.mock('../solution/solution-controller', () => ({
   takeNewScreenshot: mocks.takeNewScreenshot,
   appendScreenshot: mocks.appendScreenshot,
   stopSolutionStream: mocks.stopSolutionStream,
-  sendFollowUpQuestion: mocks.sendFollowUpQuestion
+  sendFollowUpQuestion: mocks.sendFollowUpQuestion,
+  sendTranscriptionOnly: vi.fn()
 }))
 vi.mock('./transcription', () => ({
-  getTranscriptionText: vi.fn(() => ''),
   clearTranscriptionText: vi.fn()
 }))
 vi.mock('../core/ipc-sender', () => ({

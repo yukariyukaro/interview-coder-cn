@@ -92,9 +92,19 @@ const defaultShortcuts: Record<string, Omit<Shortcut, 'defaultKey'>> = {
     key: `${triggerPrefix}+.`,
     category: 'Screenshot & AI'
   },
+  sendTranscription: {
+    action: 'sendTranscription',
+    key: `${triggerPrefix}+Enter`,
+    category: 'Screenshot & AI'
+  },
   toggleTranscription: {
     action: 'toggleTranscription',
     key: `${triggerPrefix}+T`,
+    category: 'Screenshot & AI'
+  },
+  toggleSystemTranscription: {
+    action: 'toggleSystemTranscription',
+    key: `${triggerPrefix}+Shift+S`,
     category: 'Screenshot & AI'
   },
   clearTranscription: {
@@ -163,7 +173,11 @@ export const useShortcutsStore = create<ShortcutsStore>()(
     }),
     {
       name: 'interview-coder-shortcuts',
-      version: 10,
+      // Bumping this is what merges a newly added default action into profiles that
+      // already stored shortcuts: while the versions match the migration below is
+      // skipped, and the default `merge` swaps the whole `shortcuts` object out for
+      // the stored one — so a new action would simply not exist for those users.
+      version: 12,
       migrate: (state: unknown, version: number) => {
         if (!isPersistedShortcutsState(state) || !state.shortcuts) return state as ShortcutsStore
         // Merge in any new default shortcuts that are missing

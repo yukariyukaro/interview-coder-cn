@@ -14,3 +14,8 @@ apps/mobile/ios/
 native/*/build
 resources/native
 
+# Local scratch / tooling artifacts
+.playwright-cli/
+dev-start.ps1
+tvly1.json
+
